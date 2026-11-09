@@ -51,7 +51,7 @@ class TestGuestAccess(unittest.TestCase):
         async def fail_geocoder(*_args, **_kwargs):
             raise WeatherGeocodingUnavailable("District geocoding timed out.")
         async def fail_provider(*_args, **_kwargs):
-            raise WeatherProviderUnavailable("Open-Meteo API returned HTTP 503.")
+            raise WeatherProviderUnavailable("WeatherAPI.com returned HTTP 503.")
 
         for failure, expected_code in [
             (fail_coverage, "weather_coverage_unavailable"),

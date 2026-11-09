@@ -79,6 +79,8 @@ class ForecastDay(BaseModel):
     temp_max: float
     temp_min: float
     condition: str
+    condition_code: Optional[int] = None
+    condition_icon_url: Optional[str] = None
     precipitation_probability: int
     icon: str = "cloud-sun"
 
@@ -88,8 +90,12 @@ class WeatherData(BaseModel):
     temperature: float
     feels_like: Optional[float] = None
     condition: str
+    condition_code: Optional[int] = None
+    condition_icon_url: Optional[str] = None
     humidity: int
     wind_speed: float
+    wind_direction: Optional[str] = None
+    visibility_km: Optional[float] = None
     rain_probability: int
     rainfall_mm: Optional[float] = None
     advisory: str

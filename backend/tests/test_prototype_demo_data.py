@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from backend.app.config import settings
 from backend.app.database import init_db
 from backend.app.main import app
-from backend.app.services.prototype_demo_service import weather
+from backend.app.services.weather_service import WeatherService
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -37,31 +37,17 @@ class PrototypeDemoDataTests(unittest.TestCase):
         self.assertEqual(created.status_code, 200, created.text)
         return client
 
-    def test_weather_demo_endpoints_populate_requested_districts_without_live_provider(self):
-        cases = [
-            ("Nellore", "Andhra Pradesh"),
-            ("Guntur", "Andhra Pradesh"),
-            ("Hyderabad", "Telangana"),
-            ("Karnal", "Haryana"),
-        ]
+    def test_weather_never_returns_synthetic_data_when_live_key_is_missing(self):
         client = self.guest_client()
-        with patch("backend.app.services.weather_service.WeatherService._resolve_district", side_effect=AssertionError("demo must not geocode")):
-            for district, state in cases:
-                response = client.get("/api/weather/current", params={"district": district, "state": state, "language": "en"})
-                self.assertEqual(response.status_code, 200, response.text)
-                payload = response.json()
-                self.assertEqual((payload["district"], payload["state"]), (district, state))
-                self.assertIn("DEMO DATA", payload["source"])
-                self.assertFalse(payload["is_official_alert"])
-                self.assertGreaterEqual(payload["temperature"], 15)
-                self.assertGreaterEqual(payload["humidity"], 0)
-                self.assertIsNotNone(payload["rainfall_mm"])
-                self.assertEqual(len(payload["forecast"]), 7)
-
-        first = client.get("/api/weather/current", params={"district": "Nellore", "state": "Andhra Pradesh"}).json()
-        again = client.get("/api/weather/current", params={"district": "Nellore", "state": "Andhra Pradesh"}).json()
-        self.assertEqual(first["temperature"], again["temperature"])
-        self.assertEqual(first["forecast"], again["forecast"])
+        with patch.object(settings, "WEATHERAPI_KEY", ""), patch("httpx.AsyncClient.get", side_effect=AssertionError("missing key must not make a request")):
+            district = client.get("/api/weather/current", params={"district": "Nellore", "state": "Andhra Pradesh", "language": "en"})
+            coordinates = client.post("/api/weather/current/coordinates", json={
+                "latitude": 14.44, "longitude": 79.98, "language": "en",
+            })
+        for response in (district, coordinates):
+            self.assertEqual(response.status_code, 503)
+            self.assertEqual(response.json()["detail"]["code"], "weather_configuration_missing")
+            self.assertIn("WEATHERAPI_KEY", response.json()["detail"]["message"])
 
     def test_market_prices_work_from_local_illustrative_data_without_credentials(self):
         client = self.guest_client()
@@ -79,16 +65,15 @@ class PrototypeDemoDataTests(unittest.TestCase):
         weather_response = client.get("/api/weather/current", params={"district": "Hyderabad", "state": "Andhra Pradesh"})
         self.assertEqual(weather_response.status_code, 422)
 
-    def test_every_directory_district_validates_for_weather_demo(self):
+    def test_every_directory_district_passes_canonical_membership_validation(self):
         directory = json.loads(DIRECTORY.read_text(encoding="utf-8"))
         states = {item["code"]: item["name"] for item in directory["states"]}
         self.assertEqual(len(directory["districts"]), 784)
         for item in directory["districts"]:
             state = states[item["stateCode"]]
             district = item["name"]
-            weather_result = weather(district, state, "en")
-            self.assertEqual((weather_result.district, weather_result.state), (district, state))
-            self.assertEqual(len(weather_result.forecast), 7)
+            selected_state, selected_district = WeatherService._canonical_location(district, state)
+            self.assertEqual((selected_district["name"], selected_state["name"]), (district, state))
 
 
 if __name__ == "__main__":

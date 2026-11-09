@@ -106,15 +106,21 @@ test('Market location labels use curated translations or readable canonical name
     assert.ok(localizeMarketUnit('₹/Quintal', language));
     assert.ok(supplementalTranslations[language].marketIllustrativeLabel);
     assert.ok(supplementalTranslations[language].marketIllustrativeDisclosure);
-    assert.ok(supplementalTranslations[language].weatherDemoLabel);
-    assert.ok(supplementalTranslations[language].weatherDemoNotice);
     assert.ok(supplementalTranslations[language].weatherRainfall);
+    assert.ok(supplementalTranslations[language].weatherWindDirection);
+    assert.ok(supplementalTranslations[language].weatherVisibility);
+    assert.ok(supplementalTranslations[language].weatherForecast);
+    assert.ok(supplementalTranslations[language].weatherConfigurationMissing);
+    assert.ok(supplementalTranslations[language].weatherLocationInvalid);
     assert.ok(supplementalTranslations[language].weatherDisclaimer);
+    assert.ok(localizeWeatherCondition('Cloudy', language, 1006));
   }
   assert.equal(localizeLocation('Nellore', 'en'), 'Nellore');
   assert.deepEqual(['te', 'en', 'hi', 'ta', 'kn', 'ml', 'mr'].map((language) => localizeLocation('Kolar', language)), ['కోలార్', 'Kolar', 'कोलार', 'கோலார்', 'ಕೋಲಾರ', 'കോലാർ', 'कोलार']);
   assert.equal(localizeLocation('Uncatalogued LGD District', 'te'), 'Uncatalogued LGD District');
   assert.equal(localizeLocation('Nellore', 'te'), 'నెల్లూరు');
+  assert.equal(localizeWeatherCondition('Cloudy', 'kn', 1006), 'ಮೋಡ ಕವಿದಿದೆ');
+  assert.equal(localizeWeatherCondition('Cloudy', 'ml', 1006), 'മേഘാവൃതം');
 });
 
 test('Crop health rendered prompts and key form/result copy have real localized content', () => {

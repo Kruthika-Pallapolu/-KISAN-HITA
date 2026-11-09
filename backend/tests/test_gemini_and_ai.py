@@ -2,6 +2,7 @@ import unittest
 import asyncio
 import os
 import sys
+import httpx
 from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
 from auth_helpers import authenticated_client
@@ -73,12 +74,13 @@ class TestGeminiAndAIIntegration(unittest.TestCase):
         clear_conversation_history(conv_id)
         
         # Turn 1
-        res1 = self.client.post("/api/assistant/chat", json={
-            "message": "Which crop is best for black soil?",
-            "conversation_id": conv_id,
-            "language": "en",
-            "farm_context": {"district": "Warangal", "soil_type": "Black Cotton Soil"}
-        })
+        with patch("httpx.AsyncClient.get", new=AsyncMock(side_effect=httpx.ConnectError("offline provider fixture"))):
+            res1 = self.client.post("/api/assistant/chat", json={
+                "message": "Which crop is best for black soil?",
+                "conversation_id": conv_id,
+                "language": "en",
+                "farm_context": {"district": "Warangal", "soil_type": "Black Cotton Soil"}
+            })
         self.assertEqual(res1.status_code, 200)
         data1 = res1.json()
         self.assertEqual(data1["intent"], "crop_advisor")
@@ -90,12 +92,13 @@ class TestGeminiAndAIIntegration(unittest.TestCase):
         self.assertEqual(history[1]["sender"], "assistant")
         
         # Turn 2: Follow-up question
-        res2 = self.client.post("/api/assistant/chat", json={
-            "message": "How much irrigation water does it need?",
-            "conversation_id": conv_id,
-            "language": "en",
-            "farm_context": {"district": "Warangal", "soil_type": "Black Cotton Soil"}
-        })
+        with patch("httpx.AsyncClient.get", new=AsyncMock(side_effect=httpx.ConnectError("offline provider fixture"))):
+            res2 = self.client.post("/api/assistant/chat", json={
+                "message": "How much irrigation water does it need?",
+                "conversation_id": conv_id,
+                "language": "en",
+                "farm_context": {"district": "Warangal", "soil_type": "Black Cotton Soil"}
+            })
         self.assertEqual(res2.status_code, 200)
         
         # Verify history grew to 4 messages

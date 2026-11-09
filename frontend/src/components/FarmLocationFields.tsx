@@ -11,6 +11,7 @@ interface FarmLocationFieldsProps {
   includeAll?: boolean;
   layout?: 'stack' | 'inline';
   disabled?: boolean;
+  showCurrentLocation?: boolean;
   onCurrentLocation?: (result: GeolocationResult) => void;
 }
 
@@ -31,6 +32,7 @@ export const FarmLocationFields: React.FC<FarmLocationFieldsProps> = ({
   includeAll = false,
   layout = 'stack',
   disabled = false,
+  showCurrentLocation = true,
   onCurrentLocation,
 }) => {
   const { t, language } = useLanguage();
@@ -102,7 +104,7 @@ export const FarmLocationFields: React.FC<FarmLocationFieldsProps> = ({
         </select>
       </div>
 
-      <button
+      {showCurrentLocation && <button
         type="button"
         className="btn btn-secondary"
         data-location-action="current"
@@ -112,7 +114,7 @@ export const FarmLocationFields: React.FC<FarmLocationFieldsProps> = ({
       >
         <MapPin size={15} aria-hidden="true" />
         {locating ? t('detectingLocation') : t('useCurrentLocation')}
-      </button>
+      </button>}
       {locationError && <div role="alert" style={{ color: '#f87171', fontSize: '0.78rem', flexBasis: '100%' }}>{locationError}</div>}
       {locationSuccess && <div role="status" style={{ color: 'var(--amber)', fontSize: '0.78rem', flexBasis: '100%' }}>{t('locationDetected')}</div>}
     </div>

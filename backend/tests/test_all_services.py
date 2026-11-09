@@ -1,5 +1,6 @@
 import unittest
 import asyncio
+import json
 import os
 import sys
 import time
@@ -11,7 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from app.database import init_db, get_user_profile, update_user_profile, save_conversation_message, get_conversation_history, clear_conversation_history
 from app.services.intent_router import detect_intent, AssistantOrchestrator
-from app.services.weather_service import WeatherService
+from app.services.weather_service import WeatherService, WeatherProviderUnavailable
 from app.services.crop_service import CropAdvisorService
 from app.services.crop_health_service import CropHealthService
 from app.services.market_service import MarketPriceService
@@ -27,37 +28,33 @@ class MockHttpxResponse:
         return self._json_data
 
 async def mock_weather_http_get(_client, url, params=None):
-    if "nominatim.openstreetmap.org/search" in url:
-        query = (params or {}).get("q", "")
-        district, _, state = query.partition(",")
-        state = state.split(",")[0].strip()
-        return MockHttpxResponse(200, [{
-            "lat": "17.96", "lon": "79.59", "name": district,
-            "category": "boundary", "type": "administrative",
-            "address": {"country_code": "in", "state": state, "state_district": district},
-        }])
-    return MockHttpxResponse(200, OPEN_METEO_MOCK_DATA)
+    params = params or {}
+    if url.endswith("/search.json"):
+        district, _, rest = params.get("q", "").partition(",")
+        state = rest.split(",")[0].strip()
+        return MockHttpxResponse(200, [{"name": district.strip(), "region": state, "country": "India", "lat": 17.96, "lon": 79.59, "id": 1}])
+    payload = json.loads(json.dumps(WEATHERAPI_MOCK_DATA))
+    if params.get("q"):
+        lat, lon = params["q"].split(",")
+        payload["location"].update({"lat": float(lat), "lon": float(lon)})
+    return MockHttpxResponse(200, payload)
 
-OPEN_METEO_MOCK_DATA = {
-    "current": {
-        "temperature_2m": 29.5,
-        "apparent_temperature": 31.0,
-        "relative_humidity_2m": 65,
-        "wind_speed_10m": 12.0,
-        "weather_code": 1
-    },
-    "daily": {
-        "time": ["2026-11-05", "2026-11-06", "2026-11-07", "2026-11-08", "2026-11-09", "2026-11-10", "2026-11-11"],
-        "temperature_2m_max": [31.0, 32.0, 31.5, 30.0, 31.0, 32.5, 33.0],
-        "temperature_2m_min": [22.0, 21.5, 22.0, 21.0, 22.0, 23.0, 22.5],
-        "weather_code": [1, 2, 3, 0, 1, 2, 1],
-        "precipitation_probability_max": [15, 20, 25, 10, 15, 20, 15]
-    }
+WEATHERAPI_MOCK_DATA = {
+    "location": {"name": "Warangal", "region": "Telangana", "country": "India", "lat": 17.96, "lon": 79.59},
+    "current": {"temp_c": 29.5, "feelslike_c": 31.0, "humidity": 65, "wind_kph": 12.0,
+                "wind_dir": "SW", "vis_km": 10.0, "precip_mm": 0.0,
+                "condition": {"text": "Partly cloudy", "code": 1003, "icon": "//cdn.weatherapi.com/weather/64x64/day/116.png"}},
+    "forecast": {"forecastday": [
+        {"date": "2026-11-09", "day": {"maxtemp_c": 31.0, "mintemp_c": 22.0, "daily_chance_of_rain": 15, "condition": {"text": "Partly cloudy", "code": 1003, "icon": "//cdn.weatherapi.com/weather/64x64/day/116.png"}}},
+        {"date": "2026-11-10", "day": {"maxtemp_c": 32.0, "mintemp_c": 21.5, "daily_chance_of_rain": 20, "condition": {"text": "Cloudy", "code": 1006, "icon": "//cdn.weatherapi.com/weather/64x64/day/119.png"}}},
+        {"date": "2026-11-11", "day": {"maxtemp_c": 31.5, "mintemp_c": 22.0, "daily_chance_of_rain": 25, "condition": {"text": "Rain", "code": 1183, "icon": "//cdn.weatherapi.com/weather/64x64/day/296.png"}}},
+    ]},
 }
 
 class TestKisanHitaBackend(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        settings.WEATHERAPI_KEY = "offline-test-key"
         init_db()
 
     def test_database_profile_and_conversation(self):
@@ -124,37 +121,43 @@ class TestKisanHitaBackend(unittest.TestCase):
         self.assertIsNotNone(data.spray_suitability)
         self.assertIsNotNone(data.produce_protection)
         self.assertFalse(data.is_official_alert)
-        self.assertGreaterEqual(len(data.forecast), 5)
+        self.assertGreaterEqual(len(data.forecast), 3)
 
     def test_weather_service_fails_closed_when_current_measurements_are_missing(self):
+        # Isolate the provider-response assertion from a cached forecast in
+        # another test that uses the same district and coordinates.
+        WeatherService._forecast_cache.clear()
         incomplete = {
-            "current": {key: value for key, value in OPEN_METEO_MOCK_DATA["current"].items() if key != "temperature_2m"},
-            "daily": OPEN_METEO_MOCK_DATA["daily"],
+            "location": WEATHERAPI_MOCK_DATA["location"],
+            "current": {key: value for key, value in WEATHERAPI_MOCK_DATA["current"].items() if key != "temp_c"},
+            "forecast": WEATHERAPI_MOCK_DATA["forecast"],
         }
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         async def incomplete_get(_client, url, params=None):
-            if "nominatim.openstreetmap.org/search" in url:
+            if url.endswith("/search.json"):
                 return await mock_weather_http_get(_client, url, params)
             return MockHttpxResponse(200, incomplete)
         with patch("httpx.AsyncClient.get", new=incomplete_get):
-            with self.assertRaisesRegex(RuntimeError, "live weather is unavailable"):
+            with self.assertRaises(WeatherProviderUnavailable):
                 loop.run_until_complete(WeatherService.get_district_weather("Warangal", "Telangana", "en"))
         loop.close()
 
     def test_weather_service_fails_closed_when_rain_probability_is_missing(self):
+        WeatherService._forecast_cache.clear()
         incomplete = {
-            "current": OPEN_METEO_MOCK_DATA["current"],
-            "daily": {**OPEN_METEO_MOCK_DATA["daily"], "precipitation_probability_max": []},
+            "location": WEATHERAPI_MOCK_DATA["location"],
+            "current": WEATHERAPI_MOCK_DATA["current"],
+            "forecast": {"forecastday": []},
         }
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         async def incomplete_get(_client, url, params=None):
-            if "nominatim.openstreetmap.org/search" in url:
+            if url.endswith("/search.json"):
                 return await mock_weather_http_get(_client, url, params)
             return MockHttpxResponse(200, incomplete)
         with patch("httpx.AsyncClient.get", new=incomplete_get):
-            with self.assertRaisesRegex(RuntimeError, "live weather is unavailable"):
+            with self.assertRaises(WeatherProviderUnavailable):
                 loop.run_until_complete(WeatherService.get_district_weather("Warangal", "Telangana", "en"))
         loop.close()
 

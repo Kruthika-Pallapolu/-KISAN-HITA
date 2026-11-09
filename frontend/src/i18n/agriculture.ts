@@ -1000,6 +1000,8 @@ const weatherConditions: Record<SupportedLanguage, Record<string, string>> = {
     'Clear Sky': 'Clear sky',
     'Mainly Clear': 'Mainly clear',
     'Partly Cloudy': 'Partly cloudy',
+    Cloudy: 'Cloudy',
+    Snow: 'Snow', 'Moderate Snow': 'Moderate snow', 'Heavy Snow': 'Heavy snow', Sleet: 'Sleet', 'Ice Pellets': 'Ice pellets',
     Overcast: 'Overcast',
     Fog: 'Fog',
     'Depositing Rime Fog': 'Freezing fog',
@@ -1019,6 +1021,8 @@ const weatherConditions: Record<SupportedLanguage, Record<string, string>> = {
     'Clear Sky': 'ఆకాశం నిర్మలంగా ఉంది',
     'Mainly Clear': 'ఎక్కువగా నిర్మలమైన ఆకాశం',
     'Partly Cloudy': 'కొంత మేఘావృతం',
+    Cloudy: 'మేఘావృతం',
+    Snow: 'మంచు', 'Moderate Snow': 'మోస్తరు మంచు', 'Heavy Snow': 'భారీ మంచు', Sleet: 'మంచు కలిసిన వర్షం', 'Ice Pellets': 'మంచు గుళికలు',
     Overcast: 'పూర్తిగా మేఘావృతం',
     Fog: 'పొగమంచు',
     'Depositing Rime Fog': 'గడ్డకట్టే పొగమంచు',
@@ -1038,6 +1042,8 @@ const weatherConditions: Record<SupportedLanguage, Record<string, string>> = {
     'Clear Sky': 'साफ़ आसमान',
     'Mainly Clear': 'अधिकतर साफ़',
     'Partly Cloudy': 'आंशिक बादल',
+    Cloudy: 'बादल छाए हुए',
+    Snow: 'बर्फ़', 'Moderate Snow': 'मध्यम बर्फ़बारी', 'Heavy Snow': 'भारी बर्फ़बारी', Sleet: 'बर्फ़ीली वर्षा', 'Ice Pellets': 'बर्फ़ के दाने',
     Overcast: 'घने बादल',
     Fog: 'कोहरा',
     'Depositing Rime Fog': 'जमने वाला कोहरा',
@@ -1057,6 +1063,8 @@ const weatherConditions: Record<SupportedLanguage, Record<string, string>> = {
     'Clear Sky': 'வானம் தெளிவாக உள்ளது',
     'Mainly Clear': 'பெரும்பாலும் தெளிவு',
     'Partly Cloudy': 'ஓரளவு மேகமூட்டம்',
+    Cloudy: 'மேகமூட்டம்',
+    Snow: 'பனி', 'Moderate Snow': 'மிதமான பனிப்பொழிவு', 'Heavy Snow': 'கடும் பனிப்பொழிவு', Sleet: 'பனி கலந்த மழை', 'Ice Pellets': 'பனித் துகள்கள்',
     Overcast: 'முழு மேகமூட்டம்',
     Fog: 'மூடுபனி',
     'Depositing Rime Fog': 'உறைபனி மூடுபனி',
@@ -1076,6 +1084,8 @@ const weatherConditions: Record<SupportedLanguage, Record<string, string>> = {
     'Clear Sky': 'ಆಕಾಶ ತಿಳಿಯಾಗಿದೆ',
     'Mainly Clear': 'ಹೆಚ್ಚಾಗಿ ತಿಳಿಯಾದ ಆಕಾಶ',
     'Partly Cloudy': 'ಭಾಗಶಃ ಮೋಡ ಕವಿದಿದೆ',
+    Cloudy: 'ಮೋಡ ಕವಿದಿದೆ',
+    Snow: 'ಹಿಮ', 'Moderate Snow': 'ಮಧ್ಯಮ ಹಿಮಪಾತ', 'Heavy Snow': 'ಭಾರಿ ಹಿಮಪಾತ', Sleet: 'ಹಿಮಮಿಶ್ರಿತ ಮಳೆ', 'Ice Pellets': 'ಹಿಮದ ಕಣಗಳು',
     Overcast: 'ಮೋಡ ಕವಿದಿದೆ',
     Fog: 'ಮಂಜು',
     'Depositing Rime Fog': 'ಹಿಮದ ಮಂಜು',
@@ -1095,6 +1105,8 @@ const weatherConditions: Record<SupportedLanguage, Record<string, string>> = {
     'Clear Sky': 'ആകാശം തെളിഞ്ഞിരിക്കുന്നു',
     'Mainly Clear': 'മിക്കവാറും തെളിഞ്ഞ ആകാശം',
     'Partly Cloudy': 'ഭാഗികമായി മേഘാവൃതം',
+    Cloudy: 'മേഘാവൃതം',
+    Snow: 'മഞ്ഞ്', 'Moderate Snow': 'മിതമായ മഞ്ഞുവീഴ്ച', 'Heavy Snow': 'കനത്ത മഞ്ഞുവീഴ്ച', Sleet: 'മഞ്ഞ് കലർന്ന മഴ', 'Ice Pellets': 'മഞ്ഞുതുള്ളികൾ',
     Overcast: 'മേഘാവൃതം',
     Fog: 'മൂടൽമഞ്ഞ്',
     'Depositing Rime Fog': 'തണുത്തുറയുന്ന മൂടൽമഞ്ഞ്',
@@ -1114,6 +1126,8 @@ const weatherConditions: Record<SupportedLanguage, Record<string, string>> = {
     'Clear Sky': 'आकाश निरभ्र',
     'Mainly Clear': 'बहुतेक निरभ्र',
     'Partly Cloudy': 'अंशतः ढगाळ',
+    Cloudy: 'ढगाळ',
+    Snow: 'बर्फ', 'Moderate Snow': 'मध्यम हिमवृष्टी', 'Heavy Snow': 'जोरदार हिमवृष्टी', Sleet: 'बर्फमिश्रित पाऊस', 'Ice Pellets': 'बर्फाचे कण',
     Overcast: 'ढगाळ',
     Fog: 'धुके',
     'Depositing Rime Fog': 'गोठणारे धुके',
@@ -1183,8 +1197,30 @@ export const localizeLocation = (value: string, language: SupportedLanguage): st
   return locations[language]?.[value] || value;
 };
 
-export const localizeWeatherCondition = (value: string, language: SupportedLanguage): string =>
-  weatherConditions[language]?.[value] || value;
+const WEATHERAPI_CONDITION_LABELS: Record<number, string> = {
+  1000: 'Clear Sky', 1003: 'Partly Cloudy', 1006: 'Cloudy', 1009: 'Overcast',
+  1030: 'Fog', 1135: 'Fog', 1147: 'Depositing Rime Fog',
+  1063: 'Slight Rain', 1072: 'Light Drizzle', 1150: 'Light Drizzle', 1153: 'Light Drizzle', 1168: 'Light Drizzle', 1171: 'Dense Drizzle',
+  1180: 'Slight Rain', 1183: 'Slight Rain', 1186: 'Moderate Rain', 1189: 'Moderate Rain',
+  1192: 'Heavy Rain', 1195: 'Heavy Rain', 1198: 'Slight Rain', 1201: 'Moderate Rain', 1240: 'Slight Rain Showers',
+  1243: 'Moderate Rain Showers', 1246: 'Violent Rain Showers',
+  1066: 'Snow', 1210: 'Snow', 1213: 'Snow', 1255: 'Snow',
+  1216: 'Moderate Snow', 1219: 'Moderate Snow',
+  1114: 'Heavy Snow', 1117: 'Heavy Snow', 1222: 'Heavy Snow', 1225: 'Heavy Snow', 1258: 'Heavy Snow',
+  1069: 'Sleet', 1204: 'Sleet', 1207: 'Sleet', 1249: 'Sleet', 1252: 'Sleet',
+  1237: 'Ice Pellets', 1261: 'Ice Pellets', 1264: 'Ice Pellets',
+  1087: 'Thunderstorm', 1273: 'Thunderstorm', 1276: 'Thunderstorm with Hail', 1279: 'Thunderstorm', 1282: 'Thunderstorm',
+};
+
+export const localizeWeatherCondition = (value: string, language: SupportedLanguage, conditionCode?: number): string => {
+  // WeatherAPI currently provides condition text for English, Telugu, Hindi,
+  // Tamil and Marathi. Use our curated shared condition labels for Kannada
+  // and Malayalam so common conditions remain localized without transliteration.
+  if ((language === 'kn' || language === 'ml') && conditionCode && WEATHERAPI_CONDITION_LABELS[conditionCode]) {
+    return weatherConditions[language][WEATHERAPI_CONDITION_LABELS[conditionCode]] || value;
+  }
+  return weatherConditions[language]?.[value] || value;
+};
 
 export function localizeMarketUnit(unit: string, language: SupportedLanguage): string {
   const normalized = unit.toLocaleLowerCase().replace(/[₹\s/]/g, '');

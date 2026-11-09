@@ -12,7 +12,7 @@ Kisan Hita is built on a high-throughput, async Python stack designed for low-la
 - **Persistence**: SQLite database (`kisan_hita.db`) storing user profiles, conversation history, and sequential slot sessions.
 - **Reasoning Provider**: Google Gemini 2.5 Flash for natural-language understanding, multi-turn reasoning, and crop foliage visual inspection.
 - **Data Providers**:
-  - **Weather**: Open-Meteo numerical weather forecasts (CC-BY 4.0) with localized agro-climatic fallbacks.
+  - **Weather**: WeatherAPI.com current conditions and forecasts. Configure the backend-only `WEATHERAPI_KEY`; district and country/state matching is validated before coordinates are cached.
   - **Market Prices**: Disabled until each record has a traceable official bulletin/source URL.
   - **Crop Advisor**: Verified recommendations are disabled until regional source documents are bundled and traceable.
   - **Crop Health**: Cautious symptom appraisal, root aeration guidelines, and KVK helpline referrals (`1800-180-1551`).
@@ -126,7 +126,8 @@ If scaling horizontally across multiple container replicas, migrate SQLite model
 | `GNANI_LIVE_ENABLED` | Boolean | `false` | **Keep false** to protect ~5,000 balance |
 | `GNANI_API_KEY` | Secret | `""` | Gnani API Key (dormant) |
 | `GNANI_TOKEN` | Secret | `""` | Gnani Token (dormant) |
-| `WEATHER_TIMEOUT_SECONDS`| Float | `6.0` | Open-Meteo request timeout; missing live data is reported unavailable |
+| `WEATHERAPI_KEY` | Secret | `""` | WeatherAPI.com API key (required for all district and coordinate weather requests; keep backend-only) |
+| `WEATHER_TIMEOUT_SECONDS`| Float | `6.0` | WeatherAPI.com request timeout; provider errors are reported unavailable |
 
 ---
 
@@ -201,7 +202,7 @@ curl -s -X POST http://127.0.0.1:8000/api/crop-advisor/recommend \
 ## 7. Rollback & Troubleshooting Procedures
 
 - **DNS or Network Timeouts on Outbound Calls**:
-  If the backend cannot reach Open-Meteo or Gemini, verify DNS settings (`/etc/resolv.conf`) and outbound egress firewall rules on port 443. The system automatically falls back to agro-climatic baseline data without crashing.
+  If the backend cannot reach WeatherAPI.com or Gemini, verify DNS settings (`/etc/resolv.conf`) and outbound egress firewall rules on port 443. Live weather requests return an explicit unavailable response; there is no live-to-demo fallback.
 - **Database Locked / Write Failures**:
   Verify write permissions on the directory hosting `kisan_hita.db`. If using Docker, ensure the mount volume has UID 1000 permissions (`chown -R 1000:1000 /data`).
 - **Gemini Key Rate Limiting**:

@@ -21,8 +21,10 @@ def main() -> int:
         os.environ["GEMINI_ENABLED"] = "false"
         os.environ["GEMINI_API_KEY"] = ""
         os.environ["GOOGLE_API_KEY"] = ""
-        # Demo weather has dedicated tests that enable it. Market-price tests
-        # exercise only the local deterministic illustrative dataset.
+        # Automated tests must never call WeatherAPI.com with local credentials.
+        os.environ["WEATHERAPI_KEY"] = ""
+        # Market-price tests exercise only the local deterministic
+        # illustrative dataset. Weather tests use mocked WeatherAPI responses.
         os.environ["DEMO_DATA_ENABLED"] = "false"
         os.chdir(PROJECT_ROOT)
         sys.path.insert(0, str(PROJECT_ROOT))

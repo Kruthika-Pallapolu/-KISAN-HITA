@@ -729,6 +729,11 @@ footer {
     width: 100%;
     white-space: normal !important;
   }
+  .weather-page .weather-location-controls [data-weather-current-location] {
+    align-self: stretch;
+    width: 100%;
+    white-space: normal;
+  }
   .weather-page .weather-location-actions {
     width: 100%;
     flex-wrap: wrap;

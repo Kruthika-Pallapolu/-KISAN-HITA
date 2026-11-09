@@ -1,6 +1,7 @@
 import httpx
 import json
 import logging
+import math
 import threading
 import time
 import unicodedata
@@ -8,10 +9,12 @@ from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional
+from urllib.parse import urlparse
 from ..config import settings
 from ..models.schemas import WeatherData, ForecastDay
 
 logger = logging.getLogger("weather_service")
+WEATHERAPI_BASE_URL = "https://api.weatherapi.com/v1"
 
 _GEO_DIRECTORY_PATH = Path(__file__).resolve().parents[3] / "frontend" / "src" / "data" / "indiaAdminLgd.json"
 with _GEO_DIRECTORY_PATH.open(encoding="utf-8") as _geo_file:
@@ -29,43 +32,11 @@ class WeatherGeocodingUnavailable(RuntimeError):
 
 
 class WeatherProviderUnavailable(RuntimeError):
-    """Open-Meteo could not provide a usable forecast."""
+    """WeatherAPI.com could not provide a usable forecast."""
 
 
-WMO_CODE_MAP = {
-    0: "Clear Sky",
-    1: "Mainly Clear",
-    2: "Partly Cloudy",
-    3: "Overcast",
-    45: "Fog",
-    48: "Depositing Rime Fog",
-    51: "Light Drizzle",
-    53: "Moderate Drizzle",
-    55: "Dense Drizzle",
-    56: "Light Freezing Drizzle",
-    57: "Dense Freezing Drizzle",
-    61: "Slight Rain",
-    63: "Moderate Rain",
-    65: "Heavy Rain",
-    66: "Light Freezing Rain",
-    67: "Heavy Freezing Rain",
-    71: "Slight Snow Fall",
-    73: "Moderate Snow Fall",
-    75: "Heavy Snow Fall",
-    77: "Snow Grains",
-    80: "Slight Rain Showers",
-    81: "Moderate Rain Showers",
-    82: "Violent Rain Showers",
-    85: "Slight Snow Showers",
-    86: "Heavy Snow Showers",
-    95: "Thunderstorm",
-    96: "Thunderstorm with Slight Hail",
-    99: "Thunderstorm with Heavy Hail"
-}
-
-
-def get_wmo_condition(code: int) -> str:
-    return WMO_CODE_MAP.get(code, "Variable Conditions")
+class WeatherConfigurationMissing(WeatherProviderUnavailable):
+    """Required backend-only WeatherAPI configuration is absent."""
 
 
 def get_localized_weather_advice(rain_prob: int, wind_speed: float, language: str) -> tuple[str, str, str, str]:
@@ -182,6 +153,7 @@ class WeatherService:
     _forecast_cache: OrderedDict = OrderedDict()
     _forecast_cache_ttl_seconds = 600
     _forecast_cache_limit = 256
+    _supported_condition_languages = {"en", "te", "hi", "ta", "mr"}
 
     @staticmethod
     def _normalize_name(value: str) -> str:
@@ -216,9 +188,7 @@ class WeatherService:
         }
         norm_state = state_aliases.get(norm_state, norm_state)
         wanted = WeatherService._normalize_name(district)
-        district_aliases = {
-            "chhatrapati sambhajinagar": {"aurangabad"},
-        }
+        district_aliases = {"chhatrapati sambhajinagar": {"aurangabad"}}
         candidates = [d for d in _DISTRICTS if (
             WeatherService._normalize_name(d["name"]) == wanted
             or any(WeatherService._normalize_name(a) == wanted for a in d.get("aliases", []))
@@ -248,6 +218,104 @@ class WeatherService:
         return selected_state, candidates[0]
 
     @staticmethod
+    def _valid_coordinates(latitude: Any, longitude: Any) -> tuple[float, float]:
+        try:
+            lat, lon = float(latitude), float(longitude)
+        except (TypeError, ValueError):
+            raise WeatherCoverageUnavailable("Weather provider returned invalid location coordinates.")
+        if not math.isfinite(lat) or not math.isfinite(lon) or not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            raise WeatherCoverageUnavailable("Weather provider returned invalid location coordinates.")
+        return lat, lon
+
+    @staticmethod
+    def _verified_indian_coordinates(latitude: Any, longitude: Any) -> tuple[float, float]:
+        lat, lon = WeatherService._valid_coordinates(latitude, longitude)
+        # Broad bounds cover India's mainland and island territories. The
+        # provider's country and region fields remain the primary validation.
+        if not (6.0 <= lat <= 38.6 and 67.0 <= lon <= 98.5):
+            raise WeatherCoverageUnavailable("WeatherAPI.com returned coordinates outside India for the selected district.")
+        return lat, lon
+
+    @staticmethod
+    def _legacy_forecast_icon(condition_code: int) -> str:
+        if condition_code == 1000:
+            return "sun"
+        if condition_code == 1003:
+            return "cloud-sun"
+        if condition_code in {1030, 1135, 1147}:
+            return "cloud-fog"
+        if condition_code in {1087, 1273, 1276, 1279, 1282}:
+            return "cloud-lightning"
+        if condition_code in {1066, 1114, 1117, 1210, 1213, 1216, 1219, 1222, 1225, 1255, 1258}:
+            return "cloud-snow"
+        if condition_code not in {1006, 1009}:
+            return "cloud-rain"
+        return "cloud"
+
+    @staticmethod
+    def _api_key() -> str:
+        key = (settings.WEATHERAPI_KEY or "").strip()
+        if not key:
+            raise WeatherConfigurationMissing("Weather service is not configured. Add WEATHERAPI_KEY to the backend environment.")
+        return key
+
+    @staticmethod
+    async def _weatherapi_request(endpoint: str, params: dict) -> Any:
+        key = WeatherService._api_key()
+        request_params = {**params, "key": key}
+        url = f"{WEATHERAPI_BASE_URL}/{endpoint.lstrip('/')}"
+        try:
+            async with httpx.AsyncClient(timeout=settings.WEATHER_TIMEOUT_SECONDS) as client:
+                response = await client.get(url, params=request_params)
+        except httpx.TimeoutException:
+            logger.warning("weatherapi_timeout endpoint=%s timeout_seconds=%s", endpoint, settings.WEATHER_TIMEOUT_SECONDS)
+            if endpoint == "search.json":
+                raise WeatherGeocodingUnavailable("WeatherAPI.com district search timed out. Location lookup is temporarily unavailable.")
+            raise WeatherProviderUnavailable("WeatherAPI.com request timed out. Live weather is temporarily unavailable.")
+        except httpx.RequestError as exc:
+            logger.warning("weatherapi_network_error endpoint=%s error_type=%s", endpoint, type(exc).__name__)
+            if endpoint == "search.json":
+                raise WeatherGeocodingUnavailable("WeatherAPI.com could not be reached for district lookup.")
+            raise WeatherProviderUnavailable("WeatherAPI.com could not be reached. Live weather is temporarily unavailable.")
+
+        try:
+            payload = response.json()
+        except (ValueError, TypeError):
+            payload = None
+
+        if response.status_code != 200:
+            error = payload.get("error") if isinstance(payload, dict) else None
+            error_code = error.get("code") if isinstance(error, dict) else None
+            logger.warning("weatherapi_http_error endpoint=%s http_status=%d provider_error_code=%s", endpoint, response.status_code, error_code)
+            if error_code == 2006:
+                raise WeatherProviderUnavailable("WeatherAPI.com rejected the configured API key.")
+            if error_code == 2007:
+                raise WeatherProviderUnavailable("WeatherAPI.com request quota is unavailable. Try again later.")
+            if endpoint == "search.json":
+                raise WeatherGeocodingUnavailable(f"WeatherAPI.com district search returned HTTP {response.status_code}.")
+            raise WeatherProviderUnavailable(f"WeatherAPI.com returned HTTP {response.status_code}.")
+
+        if not isinstance(payload, (dict, list)):
+            logger.warning("weatherapi_malformed_response endpoint=%s", endpoint)
+            if endpoint == "search.json":
+                raise WeatherGeocodingUnavailable("WeatherAPI.com returned an invalid district search response.")
+            raise WeatherProviderUnavailable("WeatherAPI.com returned an invalid response.")
+        if isinstance(payload, dict) and isinstance(payload.get("error"), dict):
+            error_code = payload["error"].get("code")
+            logger.warning("weatherapi_provider_error endpoint=%s provider_error_code=%s", endpoint, error_code)
+            if error_code == 1006:
+                return [] if endpoint == "search.json" else payload
+            if error_code == 2006:
+                raise WeatherProviderUnavailable("WeatherAPI.com rejected the configured API key.")
+            if error_code == 2007:
+                raise WeatherProviderUnavailable("WeatherAPI.com request quota is unavailable. Try again later.")
+            if endpoint == "search.json":
+                raise WeatherGeocodingUnavailable("WeatherAPI.com could not search for this district.")
+            raise WeatherProviderUnavailable("WeatherAPI.com could not provide weather for this location.")
+        logger.debug("weatherapi_response endpoint=%s http_status=%d", endpoint, response.status_code)
+        return payload
+
+    @staticmethod
     async def _resolve_district(district: str, state: Optional[str]) -> tuple[float, float, str, str, str]:
         selected_state, canonical_district = WeatherService._canonical_location(district, state)
         district_name, state_name = canonical_district["name"], selected_state["name"]
@@ -261,181 +329,70 @@ class WeatherService:
             if cached:
                 del WeatherService._geocode_cache[key]
 
-        params = {
+        payload = await WeatherService._weatherapi_request("search.json", {
             "q": f"{district_name}, {state_name}, India",
-            "format": "jsonv2", "addressdetails": "1", "countrycodes": "in", "limit": "10",
-        }
-        try:
-            async with httpx.AsyncClient(timeout=settings.WEATHER_TIMEOUT_SECONDS, headers={
-                "User-Agent": "KisanHita/1.0 (district weather lookup)", "Accept": "application/json",
-            }) as client:
-                response = await client.get("https://nominatim.openstreetmap.org/search", params=params)
-                if response.status_code != 200:
-                    logger.warning(
-                        "weather_geocode_search_failed district=%r state=%r http_status=%d",
-                        district_name, state_name, response.status_code,
-                    )
-                    raise WeatherGeocodingUnavailable(f"District geocoder returned HTTP {response.status_code}.")
-                candidates = response.json()
-                candidate_count = len(candidates) if isinstance(candidates, list) else 0
-                logger.info(
-                    "weather_geocode_search district=%r state=%r http_status=%d candidates=%d",
-                    district_name, state_name, response.status_code, candidate_count,
-                )
-        except httpx.TimeoutException:
-            logger.warning("weather_geocode_timeout district=%r state=%r", district_name, state_name)
-            raise WeatherGeocodingUnavailable("District geocoding timed out. Live weather is currently unavailable.")
-        except httpx.RequestError as exc:
-            logger.warning(
-                "weather_geocode_request_error district=%r state=%r error_type=%s",
-                district_name, state_name, type(exc).__name__,
-            )
-            raise WeatherGeocodingUnavailable(f"District geocoding network error ({exc}). Live weather is currently unavailable.")
-        except WeatherGeocodingUnavailable:
-            raise
-        except Exception as exc:
-            raise WeatherGeocodingUnavailable(f"District geocoding failed: {exc}")
+            "lang": "en",
+        })
+        if not isinstance(payload, list):
+            logger.warning("weatherapi_geocode_malformed district=%r state=%r", district_name, state_name)
+            raise WeatherGeocodingUnavailable("WeatherAPI.com returned an invalid location search response.")
 
-        matches = []
-        wanted_districts = {WeatherService._normalize_name(district_name)}
-        wanted_districts.update(WeatherService._normalize_name(a) for a in canonical_district.get("aliases", []))
+        wanted_names = {WeatherService._normalize_name(district_name)}
+        wanted_names.update(WeatherService._normalize_name(alias) for alias in canonical_district.get("aliases", []))
         if district_name == "Chhatrapati Sambhajinagar":
-            wanted_districts.add("aurangabad")
+            wanted_names.add("aurangabad")
 
-        administrative_fields = (
-            "state_district", "district", "county", "municipality", "city_district", "locality"
-        )
-        for index, item in enumerate(candidates if isinstance(candidates, list) else []):
-            address = item.get("address") or {}
-            administrative_address = {
-                field: str(address[field])[:100]
-                for field in ("state", *administrative_fields)
-                if address.get(field)
-            }
-            logger.info(
-                "weather_geocode_candidate district=%r state=%r index=%d name=%r category=%r type=%r country=%r administrative_address=%s",
-                district_name,
-                state_name,
-                index,
-                str(item.get("name") or "")[:120],
-                item.get("category", item.get("class", "")),
-                item.get("type", ""),
-                address.get("country_code", ""),
-                json.dumps(administrative_address, ensure_ascii=False, separators=(",", ":")),
-            )
-
-            if str(address.get("country_code", "")).casefold() != "in":
+        matches = {}
+        for index, item in enumerate(payload):
+            if not isinstance(item, dict):
+                logger.info("weatherapi_geocode_candidate_rejected district=%r state=%r index=%d reason=invalid_candidate", district_name, state_name, index)
+                continue
+            country = str(item.get("country") or "").strip()
+            region = str(item.get("region") or "").strip()
+            name = str(item.get("name") or "").strip()
+            candidate_name = WeatherService._normalize_name(name)
+            if country.casefold() != "india":
+                reason = "country_mismatch"
+            elif not WeatherService._same_state(region, state_name):
+                reason = "state_mismatch"
+            elif candidate_name not in wanted_names:
+                reason = "district_name_mismatch"
+            else:
+                reason = None
+            coordinates = None
+            if reason is None:
+                try:
+                    coordinates = WeatherService._verified_indian_coordinates(item.get("lat"), item.get("lon"))
+                except WeatherCoverageUnavailable:
+                    reason = "invalid_coordinates"
+            if reason is not None:
                 logger.info(
-                    "weather_geocode_candidate_rejected district=%r state=%r index=%d reason=country_mismatch",
-                    district_name, state_name, index,
+                    "weatherapi_geocode_candidate_rejected district=%r state=%r index=%d name=%r region=%r country=%r reason=%s",
+                    district_name, state_name, index, name[:100], region[:100], country[:80], reason,
                 )
                 continue
-            actual_state = str(address.get("state") or "")
-            if not actual_state or not WeatherService._same_state(actual_state, state_name):
-                logger.info(
-                    "weather_geocode_candidate_rejected district=%r state=%r index=%d reason=state_mismatch",
-                    district_name, state_name, index,
-                )
-                continue
+            lat, lon = coordinates
+            logger.info("weatherapi_geocode_candidate_accepted district=%r state=%r index=%d", district_name, state_name, index)
+            matches[(round(lat, 5), round(lon, 5))] = (lat, lon)
 
-            category = item.get("category", item.get("class", ""))
-            item_type = item.get("type", "")
-            if category != "boundary" or item_type != "administrative":
-                logger.info(
-                    "weather_geocode_candidate_rejected district=%r state=%r index=%d reason=boundary_type_mismatch",
-                    district_name, state_name, index,
-                )
-                continue
+        if not matches:
+            logger.info("weatherapi_geocode_unverified district=%r state=%r candidates=%d", district_name, state_name, len(payload))
+            raise WeatherCoverageUnavailable(f"Weather coverage is currently unavailable for {district_name}, {state_name}; WeatherAPI.com did not return an exact verified match.")
+        if len(matches) > 1:
+            logger.warning("weatherapi_geocode_ambiguous district=%r state=%r matches=%d", district_name, state_name, len(matches))
+            raise WeatherCoverageUnavailable(f"WeatherAPI.com returned ambiguous locations for {district_name}, {state_name}.")
 
-            administrative_names = [address.get(field) for field in administrative_fields]
-            administrative_names.append(item.get("name"))
-            result_names = {
-                WeatherService._normalize_name(str(value))
-                for value in administrative_names if value
-            }
-            if not result_names.intersection(wanted_districts):
-                logger.info(
-                    "weather_geocode_candidate_rejected district=%r state=%r index=%d reason=district_name_mismatch",
-                    district_name, state_name, index,
-                )
-                continue
-
-            try:
-                lat, lon = float(item["lat"]), float(item["lon"])
-            except (KeyError, TypeError, ValueError):
-                logger.info(
-                    "weather_geocode_candidate_rejected district=%r state=%r index=%d reason=invalid_coordinates",
-                    district_name, state_name, index,
-                )
-                continue
-            if not (-90 <= lat <= 90 and -180 <= lon <= 180):
-                logger.info(
-                    "weather_geocode_candidate_rejected district=%r state=%r index=%d reason=invalid_coordinates",
-                    district_name, state_name, index,
-                )
-                continue
-
-            # Prefer the district-level boundary over nested county/local boundaries.
-            # For Kangra, this selects OSM relation 364074 rather than 9971196.
-            is_district_level = (
-                bool(address.get("state_district"))
-                and not any(address.get(field) for field in (
-                    "county", "municipality", "city_district", "locality"
-                ))
-            )
-
-            logger.info(
-                "weather_geocode_candidate_accepted district=%r state=%r index=%d district_level=%s",
-                district_name, state_name, index, is_district_level,
-            )
-            matches.append((lat, lon, district_name, state_name, is_district_level))
-
-        preferred = [item for item in matches if item[4]]
-        logger.info(
-            "weather_geocode_candidates_filtered district=%r state=%r matching=%d preferred_district_level=%d",
-            district_name, state_name, len(matches), len(preferred),
-        )
-        if preferred:
-            matches = preferred
-
-        unique = {
-            (
-                round(item[0], 5),
-                round(item[1], 5),
-                WeatherService._normalize_name(item[3])
-            ): item
-            for item in matches
-        }
-
-        if len(unique) != 1:
-            if unique:
-                logger.warning(
-                    "weather_geocode_ambiguous district=%r state=%r unique_matches=%d",
-                    district_name, state_name, len(unique),
-                )
-                raise ValueError(f"District '{district}' is ambiguous in {state or 'India'}. Select a state and district that match.")
-            logger.warning(
-                "weather_geocode_unverified district=%r state=%r candidates=%d matching=0 preferred_district_level=%d",
-                district_name, state_name, candidate_count, len(preferred),
-            )
-            raise WeatherCoverageUnavailable(f"Weather coverage is currently unavailable for {district_name}, {state_name}; its location could not be verified.")
-
-        lat, lon, resolved_district, resolved_state = next(iter(unique.values()))[:4]
-
+        lat, lon = next(iter(matches.values()))
+        coordinate_source = "WeatherAPI.com Search API; exact district, state and country verified"
         with WeatherService._cache_lock:
             WeatherService._geocode_cache[key] = (
                 time.monotonic() + WeatherService._cache_ttl_seconds,
-                lat,
-                lon,
-                resolved_district,
-                resolved_state,
-                "Nominatim administrative boundary; country/state/district verified"
+                lat, lon, district_name, state_name, coordinate_source,
             )
             WeatherService._geocode_cache.move_to_end(key)
             while len(WeatherService._geocode_cache) > WeatherService._cache_limit:
                 WeatherService._geocode_cache.popitem(last=False)
-
-        return lat, lon, resolved_district, resolved_state, "Nominatim administrative boundary; country/state/district verified"
+        return lat, lon, district_name, state_name, coordinate_source
 
     @staticmethod
     async def get_coordinate_weather(latitude: float, longitude: float, language: str = "en") -> WeatherData:
@@ -443,35 +400,12 @@ class WeatherService:
             lat, lon = float(latitude), float(longitude)
         except (TypeError, ValueError):
             raise ValueError("Valid latitude and longitude are required.")
-        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        if not math.isfinite(lat) or not math.isfinite(lon) or not (-90 <= lat <= 90 and -180 <= lon <= 180):
             raise ValueError("Coordinates are outside the valid latitude/longitude range.")
-
-        try:
-            async with httpx.AsyncClient(timeout=settings.WEATHER_TIMEOUT_SECONDS, headers={
-                "User-Agent": "KisanHita/1.0 (GPS weather lookup)", "Accept": "application/json",
-            }) as client:
-                response = await client.get("https://nominatim.openstreetmap.org/reverse", params={
-                    "format": "jsonv2", "lat": str(lat), "lon": str(lon), "zoom": "10", "addressdetails": "1", "accept-language": "en",
-                })
-                if response.status_code != 200:
-                    raise WeatherGeocodingUnavailable(f"GPS location verification returned HTTP {response.status_code}.")
-                address = response.json().get("address") or {}
-        except httpx.TimeoutException:
-            raise WeatherGeocodingUnavailable("GPS location verification timed out. Live weather is currently unavailable.")
-        except httpx.RequestError as exc:
-            raise WeatherGeocodingUnavailable(f"GPS location verification network error ({exc}). Live weather is currently unavailable.")
-
-        country = str(address.get("country_code", "")).casefold()
-        state_name = str(address.get("state") or "")
-        district_name = str(address.get("state_district") or address.get("district") or address.get("county") or "")
-        if country != "in":
-            raise ValueError("GPS coordinates could not be verified as a location in India.")
-        if not state_name or not district_name:
-            raise ValueError("GPS coordinates did not resolve to a verified Indian state and district.")
-
         return await WeatherService._fetch_forecast(
-            lat, lon, district_name, state_name, language,
-            "Nominatim reverse geocoding; country/state/district verified"
+            lat, lon, "", "", language,
+            "WeatherAPI.com forecast location; country and state verified",
+            expected_state=None, expected_district=None,
         )
 
     @staticmethod
@@ -480,26 +414,59 @@ class WeatherService:
         state_name = (state_query or "").strip()
         if not district_name:
             raise ValueError("A district is required for district-based weather.")
-
         selected_state, selected_district = WeatherService._canonical_location(district_name, state_name or None)
-
-        if settings.DEMO_DATA_ENABLED:
-            from .prototype_demo_service import weather as demo_weather
-            return demo_weather(selected_district["name"], selected_state["name"], language)
-
         lat, lon, district_name, state_name, coordinate_source = await WeatherService._resolve_district(
             selected_district["name"], selected_state["name"]
         )
-
         return await WeatherService._fetch_forecast(
-            lat, lon, district_name, state_name, language, coordinate_source
+            lat, lon, district_name, state_name, language, coordinate_source,
+            expected_state=state_name, expected_district=selected_district,
         )
 
     @staticmethod
-    async def _fetch_forecast(lat: float, lon: float, district_name: str, state_name: str, language: str, coordinate_source: str = "") -> WeatherData:
-        cache_key = (round(lat, 2), round(lon, 2), language, district_name.casefold(), state_name.casefold())
-        now = time.monotonic()
+    def _number(value: Any, field: str) -> float:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            raise WeatherProviderUnavailable(f"WeatherAPI.com returned invalid {field} data.")
+        if not math.isfinite(parsed):
+            raise WeatherProviderUnavailable(f"WeatherAPI.com returned invalid {field} data.")
+        return parsed
 
+    @staticmethod
+    def _condition(condition: Any, field: str) -> tuple[str, int, str]:
+        if not isinstance(condition, dict) or not str(condition.get("text") or "").strip():
+            raise WeatherProviderUnavailable(f"WeatherAPI.com returned no {field} condition.")
+        try:
+            code = int(condition.get("code"))
+        except (TypeError, ValueError):
+            raise WeatherProviderUnavailable(f"WeatherAPI.com returned an invalid {field} condition code.")
+        if code <= 0:
+            raise WeatherProviderUnavailable(f"WeatherAPI.com returned an invalid {field} condition code.")
+        icon = str(condition.get("icon") or "").strip()
+        if icon.startswith("//"):
+            icon = f"https:{icon}"
+        try:
+            parsed = urlparse(icon)
+        except ValueError:
+            raise WeatherProviderUnavailable(f"WeatherAPI.com returned an invalid {field} condition icon.")
+        if parsed.scheme != "https" or parsed.hostname != "cdn.weatherapi.com" or not parsed.path.startswith("/weather/"):
+            raise WeatherProviderUnavailable(f"WeatherAPI.com returned an invalid {field} condition icon.")
+        return str(condition["text"]).strip(), code, parsed.geturl()
+
+    @staticmethod
+    async def _fetch_forecast(
+        lat: float, lon: float, district_name: str, state_name: str, language: str,
+        coordinate_source: str = "", expected_state: Optional[str] = None,
+        expected_district: Optional[dict] = None,
+    ) -> WeatherData:
+        lat, lon = WeatherService._valid_coordinates(lat, lon)
+        cache_district = district_name.casefold() if district_name else "coordinates"
+        cache_state = state_name.casefold() if state_name else "coordinates"
+        # Keep location identity precise enough that nearby farm coordinates
+        # do not share another point's live forecast cache entry.
+        cache_key = (round(lat, 5), round(lon, 5), language, cache_district, cache_state)
+        now = time.monotonic()
         with WeatherService._cache_lock:
             cached = WeatherService._forecast_cache.get(cache_key)
             if cached and cached[0] > now:
@@ -508,132 +475,137 @@ class WeatherService:
             if cached:
                 del WeatherService._forecast_cache[cache_key]
 
-        url = (
-            f"https://api.open-meteo.com/v1/forecast?"
-            f"latitude={lat}&longitude={lon}&"
-            f"current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&"
-            f"daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&"
-            f"timezone=auto"
-        )
-
+        api_language = language if language in WeatherService._supported_condition_languages else "en"
+        payload = await WeatherService._weatherapi_request("forecast.json", {
+            "q": f"{lat},{lon}", "days": 3, "aqi": "no", "alerts": "no", "lang": api_language,
+        })
         try:
-            async with httpx.AsyncClient(timeout=settings.WEATHER_TIMEOUT_SECONDS) as client:
-                res = await client.get(url)
-                if res.status_code == 200:
-                    data = res.json()
-                    curr = data.get("current", {})
-                    daily = data.get("daily", {})
+            location = payload.get("location")
+            current = payload.get("current")
+            forecast_days = payload.get("forecast", {}).get("forecastday")
+            if not isinstance(location, dict) or not isinstance(current, dict) or not isinstance(forecast_days, list) or not forecast_days:
+                raise WeatherProviderUnavailable("WeatherAPI.com returned an incomplete forecast response.")
 
-                    required_current = ("temperature_2m", "relative_humidity_2m", "wind_speed_10m", "weather_code")
-                    if any(curr.get(field) is None for field in required_current):
-                        raise RuntimeError("Weather provider returned incomplete current measurements; live weather is unavailable.")
+            country = str(location.get("country") or "").strip()
+            provider_state = str(location.get("region") or "").strip()
+            if country.casefold() != "india":
+                if expected_state:
+                    raise WeatherCoverageUnavailable("WeatherAPI.com did not return an Indian location for the selected district.")
+                raise ValueError("GPS coordinates could not be verified as a location in India.")
+            matching_states = [s for s in _STATES if WeatherService._same_state(s["name"], provider_state)]
+            if not provider_state or len(matching_states) != 1:
+                raise WeatherCoverageUnavailable("WeatherAPI.com could not verify the Indian state for this location.")
+            canonical_state = matching_states[0]["name"]
+            if expected_state and not WeatherService._same_state(provider_state, expected_state):
+                raise WeatherCoverageUnavailable("WeatherAPI.com resolved the request to a different state; no alternate location was used.")
 
-                    temp = float(curr["temperature_2m"])
-                    apparent = curr.get("apparent_temperature")
-                    feels_like = float(apparent) if apparent is not None else None
-                    humidity = int(curr["relative_humidity_2m"])
-                    wind_speed = float(curr["wind_speed_10m"])
-                    wmo_code = int(curr["weather_code"])
+            provider_district = str(location.get("name") or "").strip()
+            if expected_district:
+                # The Search API already verified the requested district, state,
+                # country and coordinates. Forecast's reverse label can be a
+                # nearby locality at the same verified point, so preserve the
+                # canonical requested district in the response instead of
+                # substituting that label.
+                try:
+                    _forecast_state, forecast_district = WeatherService._canonical_location(provider_district, expected_state)
+                except ValueError:
+                    forecast_district = None
+                if forecast_district and forecast_district["id"] != expected_district["id"]:
+                    raise WeatherCoverageUnavailable("WeatherAPI.com resolved the request to a different district; no alternate location was used.")
+                provider_district = expected_district["name"]
 
-                    if not 0 <= humidity <= 100 or wind_speed < 0:
-                        raise RuntimeError("Weather provider returned invalid current measurements; live weather is unavailable.")
+            provider_lat, provider_lon = WeatherService._valid_coordinates(location.get("lat"), location.get("lon"))
+            if abs(provider_lat - lat) > 0.05 or abs(provider_lon - lon) > 0.05:
+                raise WeatherCoverageUnavailable("WeatherAPI.com returned weather for a different location; no alternate location was used.")
 
-                    cond = get_wmo_condition(wmo_code)
+            temp = WeatherService._number(current.get("temp_c"), "temperature")
+            feels_like = WeatherService._number(current.get("feelslike_c"), "feels-like temperature")
+            humidity = int(WeatherService._number(current.get("humidity"), "humidity"))
+            wind_speed = WeatherService._number(current.get("wind_kph"), "wind speed")
+            wind_direction = str(current.get("wind_dir") or "").strip()
+            if not wind_direction:
+                raise WeatherProviderUnavailable("WeatherAPI.com returned no current wind direction.")
+            visibility = WeatherService._number(current.get("vis_km"), "visibility")
+            rainfall = WeatherService._number(current.get("precip_mm"), "rainfall")
+            condition, condition_code, condition_icon_url = WeatherService._condition(current.get("condition"), "current")
+            if not 0 <= humidity <= 100 or wind_speed < 0 or rainfall < 0 or visibility < 0:
+                raise WeatherProviderUnavailable("WeatherAPI.com returned invalid current measurements.")
 
-                    daily_probs = daily.get("precipitation_probability_max")
-                    if not daily_probs or daily_probs[0] is None:
-                        raise RuntimeError("Weather provider returned no current-day rain probability; live weather is unavailable.")
+            normalized_days = []
+            for entry in forecast_days[:3]:
+                if not isinstance(entry, dict) or not isinstance(entry.get("day"), dict):
+                    raise WeatherProviderUnavailable("WeatherAPI.com returned an incomplete daily forecast.")
+                day = entry["day"]
+                date_text = str(entry.get("date") or "")
+                try:
+                    parsed_date = datetime.strptime(date_text, "%Y-%m-%d")
+                except ValueError:
+                    raise WeatherProviderUnavailable("WeatherAPI.com returned an invalid forecast date.")
+                max_temp = WeatherService._number(day.get("maxtemp_c"), "forecast maximum temperature")
+                min_temp = WeatherService._number(day.get("mintemp_c"), "forecast minimum temperature")
+                rain_value = day.get("daily_chance_of_rain")
+                rain_probability = int(WeatherService._number(rain_value, "forecast rain probability"))
+                day_condition, day_condition_code, day_condition_icon_url = WeatherService._condition(day.get("condition"), "daily forecast")
+                if max_temp < min_temp or not 0 <= rain_probability <= 100:
+                    raise WeatherProviderUnavailable("WeatherAPI.com returned invalid daily forecast measurements.")
+                normalized_days.append(ForecastDay(
+                    day_name="Today" if not normalized_days else parsed_date.strftime("%a"),
+                    date=date_text,
+                    temp_max=max_temp,
+                    temp_min=min_temp,
+                    condition=day_condition,
+                    condition_code=day_condition_code,
+                    condition_icon_url=day_condition_icon_url,
+                    precipitation_probability=rain_probability,
+                    icon=WeatherService._legacy_forecast_icon(day_condition_code),
+                ))
+            rain_prob = normalized_days[0].precipitation_probability
 
-                    rain_prob = int(daily_probs[0])
-                    if not 0 <= rain_prob <= 100:
-                        raise RuntimeError("Weather provider returned an invalid rain probability; live weather is unavailable.")
-
-                    forecast_list = []
-                    dates = daily.get("time", [])
-                    maxs = daily.get("temperature_2m_max", [])
-                    mins = daily.get("temperature_2m_min", [])
-                    codes = daily.get("weather_code", [])
-                    probs = daily.get("precipitation_probability_max", [])
-
-                    if not dates or any(len(values) < min(7, len(dates)) for values in (maxs, mins, codes, probs)):
-                        raise RuntimeError("Weather provider returned an incomplete forecast; live forecast is unavailable.")
-
-                    for i in range(min(7, len(dates))):
-                        if any(values[i] is None for values in (maxs, mins, codes, probs)):
-                            raise RuntimeError("Weather provider returned missing forecast measurements.")
-
-                        dt = datetime.strptime(dates[i], "%Y-%m-%d")
-                        day_name = dt.strftime("%a") if i > 0 else "Today"
-                        day_cond = get_wmo_condition(int(codes[i]))
-
-                        forecast_list.append(ForecastDay(
-                            day_name=day_name,
-                            date=dates[i],
-                            temp_max=float(maxs[i]),
-                            temp_min=float(mins[i]),
-                            condition=day_cond,
-                            precipitation_probability=int(probs[i]),
-                            icon="cloud-sun"
-                        ))
-
-                    irrigation_advice, advisory, spray_suitability, produce_protection = get_localized_weather_advice(
-                        rain_prob=rain_prob,
-                        wind_speed=wind_speed,
-                        language=language
-                    )
-
-                    safe_spray = {
-                        "te": "పిచికారీ నిర్ణయం తీసుకునే ముందు గంటవారీ వర్ష సూచన, గాలి పరిస్థితులు, మందు లేబుల్‌ను పరిశీలించండి. ఈ రోజువారీ అంచనా ఒక్కటే సరిపోదు.",
-                        "hi": "छिड़काव से पहले घंटेवार बारिश का पूर्वानुमान, हवा और उत्पाद का लेबल जाँचें। केवल दैनिक पूर्वानुमान पर्याप्त नहीं है।",
-                        "ta": "தெளிப்பதற்கு முன் மணிநேர மழை முன்னறிவிப்பு, காற்று மற்றும் தயாரிப்பு லேபிளைச் சரிபார்க்கவும். தினசரி முன்னறிவிப்பு மட்டும் போதாது.",
-                        "kn": "ಸಿಂಪಡಿಸುವ ಮೊದಲು ಗಂಟೆಗಂಟೆಯ ಮಳೆ ಮುನ್ಸೂಚನೆ, ಗಾಳಿ ಮತ್ತು ಉತ್ಪನ್ನದ ಲೇಬಲ್ ಪರಿಶೀಲಿಸಿ. ದೈನಂದಿನ ಮುನ್ಸೂಚನೆ ಮಾತ್ರ ಸಾಕಾಗುವುದಿಲ್ಲ.",
-                        "ml": "തളിക്കുന്നതിന് മുമ്പ് മണിക്കൂർ അടിസ്ഥാനത്തിലുള്ള മഴ പ്രവചനം, കാറ്റ്, ഉൽപ്പന്ന ലേബൽ എന്നിവ പരിശോധിക്കുക. ദിവസത്തെ പ്രവചനം മാത്രം മതിയാകില്ല.",
-                        "mr": "फवारणीपूर्वी तासानुसार पावसाचा अंदाज, वारा आणि उत्पादनाचे लेबल तपासा. केवळ दैनिक अंदाज पुरेसा नाही.",
-                        "en": "Check the hourly rain forecast, wind conditions and product label before spraying. A daily forecast alone is not enough to recommend spraying.",
-                    }
-                    spray_suitability = safe_spray.get(language, safe_spray["en"])
-
-                    weather = WeatherData(
-                        district=district_name,
-                        state=state_name,
-                        temperature=temp,
-                        feels_like=feels_like,
-                        condition=cond,
-                        humidity=humidity,
-                        wind_speed=wind_speed,
-                        rain_probability=rain_prob,
-                        rainfall_mm=float(curr.get("precipitation") or 0.0),
-                        advisory=advisory,
-                        irrigation_advice=irrigation_advice,
-                        spray_suitability=spray_suitability,
-                        produce_protection=produce_protection,
-                        is_official_alert=False,
-                        source="Open-Meteo.com under CC BY 4.0. Numerical weather prediction; not an official IMD meteorological warning.",
-                        coordinate_source=coordinate_source or None,
-                        retrieval_timestamp=datetime.now(timezone.utc).isoformat(),
-                        forecast=forecast_list
-                    )
-
-                    with WeatherService._cache_lock:
-                        WeatherService._forecast_cache[cache_key] = (
-                            time.monotonic() + WeatherService._forecast_cache_ttl_seconds,
-                            weather
-                        )
-                        WeatherService._forecast_cache.move_to_end(cache_key)
-                        while len(WeatherService._forecast_cache) > WeatherService._forecast_cache_limit:
-                            WeatherService._forecast_cache.popitem(last=False)
-
-                    return weather
-                else:
-                    raise WeatherProviderUnavailable(f"Open-Meteo API returned HTTP {res.status_code} for {district_name}")
-
-        except httpx.TimeoutException:
-            raise WeatherProviderUnavailable(f"Weather API request timed out ({settings.WEATHER_TIMEOUT_SECONDS}s) for {district_name}. Live weather is currently unavailable.")
-        except httpx.RequestError as exc:
-            raise WeatherProviderUnavailable(f"Weather API network error ({exc}) for {district_name}. Live weather is currently unavailable.")
-        except ValueError:
+            irrigation_advice, advisory, _spray_suitability, produce_protection = get_localized_weather_advice(
+                rain_prob=rain_prob, wind_speed=wind_speed, language=language,
+            )
+            safe_spray = {
+                "te": "పిచికారీ నిర్ణయం తీసుకునే ముందు గంటవారీ వర్ష సూచన, గాలి పరిస్థితులు, మందు లేబుల్‌ను పరిశీలించండి. ఈ రోజువారీ అంచనా ఒక్కటే సరిపోదు.",
+                "hi": "छिड़काव से पहले घंटेवार बारिश का पूर्वानुमान, हवा और उत्पाद का लेबल जाँचें। केवल दैनिक पूर्वानुमान पर्याप्त नहीं है।",
+                "ta": "தெளிப்பதற்கு முன் மணிநேர மழை முன்னறிவிப்பு, காற்று மற்றும் தயாரிப்பு லேபிளைச் சரிபார்க்கவும். தினசரி முன்னறிவிப்பு மட்டும் போதாது.",
+                "kn": "ಸಿಂಪಡಿಸುವ ಮೊದಲು ಗಂಟೆಗಂಟೆಯ ಮಳೆ ಮುನ್ಸೂಚನೆ, ಗಾಳಿ ಮತ್ತು ಉತ್ಪನ್ನದ ಲೇಬಲ್ ಪರಿಶೀಲಿಸಿ. ದೈನಂದಿನ ಮುನ್ಸೂಚನೆ ಮಾತ್ರ ಸಾಕಾಗುವುದಿಲ್ಲ.",
+                "ml": "തളിക്കുന്നതിന് മുമ്പ് മണിക്കൂർ അടിസ്ഥാനത്തിലുള്ള മഴ പ്രവചനം, കാറ്റ്, ഉൽപ്പന്ന ലേബൽ എന്നിവ പരിശോധിക്കുക. ദിവസത്തെ പ്രവചനം മാത്രം മതിയാകില്ല.",
+                "mr": "फवारणीपूर्वी तासानुसार पावसाचा अंदाज, वारा आणि उत्पादनाचे लेबल तपासा. केवळ दैनिक अंदाज पुरेसा नाही.",
+                "en": "Check the hourly rain forecast, wind conditions and product label before spraying. A daily forecast alone is not enough to recommend spraying.",
+            }
+            weather = WeatherData(
+                district=provider_district or district_name or "Selected location",
+                state=canonical_state,
+                temperature=temp,
+                feels_like=feels_like,
+                condition=condition,
+                condition_code=condition_code,
+                condition_icon_url=condition_icon_url,
+                humidity=humidity,
+                wind_speed=wind_speed,
+                wind_direction=wind_direction,
+                visibility_km=visibility,
+                rain_probability=rain_prob,
+                rainfall_mm=rainfall,
+                advisory=advisory,
+                irrigation_advice=irrigation_advice,
+                spray_suitability=safe_spray.get(language, safe_spray["en"]),
+                produce_protection=produce_protection,
+                is_official_alert=False,
+                source="WeatherAPI.com forecast data; retrieved live and not an official IMD warning.",
+                coordinate_source=coordinate_source or None,
+                retrieval_timestamp=datetime.now(timezone.utc).isoformat(),
+                forecast=normalized_days,
+            )
+        except (WeatherCoverageUnavailable, WeatherProviderUnavailable, ValueError):
             raise
-        except RuntimeError:
-            raise
-        except Exception as exc:
-            raise WeatherProviderUnavailable(f"Unable to retrieve weather for {district_name}: {exc}")
+        except (TypeError, KeyError, AttributeError) as exc:
+            logger.warning("weatherapi_malformed_forecast error_type=%s", type(exc).__name__)
+            raise WeatherProviderUnavailable("WeatherAPI.com returned an invalid forecast response.")
+
+        with WeatherService._cache_lock:
+            WeatherService._forecast_cache[cache_key] = (time.monotonic() + WeatherService._forecast_cache_ttl_seconds, weather)
+            WeatherService._forecast_cache.move_to_end(cache_key)
+            while len(WeatherService._forecast_cache) > WeatherService._forecast_cache_limit:
+                WeatherService._forecast_cache.popitem(last=False)
+        return weather

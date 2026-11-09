@@ -39,12 +39,15 @@ test('hero heading uses a bounded responsive scale for every localized script', 
   }
 });
 
-test('weather demo and local illustrative market UI submit selected location without inventing source records', () => {
+test('weather uses live API requests while the local illustrative market UI remains separately disclosed', () => {
   const weather = read('../pages/WeatherPage.tsx');
   const market = read('../pages/MarketPricesPage.tsx');
   assert.match(weather, /new URLSearchParams\(\{ district, state, language \}\)/);
-  assert.match(weather, /weatherData\.source\.includes\('DEMO DATA'\)/);
-  assert.match(weather, /weatherDemoNotice/);
+  assert.match(weather, /weatherConfigurationMissing/);
+  assert.match(weather, /weatherData\.condition_icon_url/);
+  assert.match(weather, /weatherData\.wind_direction/);
+  assert.match(weather, /weatherData\.visibility_km/);
+  assert.doesNotMatch(weather, /weatherDemo(Label|Notice)|DEMO DATA/);
   assert.match(market, /params\.append\('commodity', comm\.trim\(\)\)/);
   assert.match(market, /params\.append\('state', st\)/);
   assert.match(market, /params\.append\('district', dist\)/);

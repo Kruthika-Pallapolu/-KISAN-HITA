@@ -2,6 +2,7 @@ import unittest
 import asyncio
 import os
 import sys
+import json
 from unittest.mock import patch, AsyncMock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -9,6 +10,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from app.database import init_db, clear_conversation_history, get_conversation_session
 from app.services.intent_router import AssistantOrchestrator, extract_mandi
 from app.models.schemas import ForecastDay, WeatherData
+from app.config import settings
 
 class MockHttpxResponse:
     def __init__(self, status_code, json_data):
@@ -19,35 +21,35 @@ class MockHttpxResponse:
         return self._json_data
 
 async def mock_weather_http_get(_client, url, params=None):
-    if "nominatim.openstreetmap.org/search" in url:
-        query = (params or {}).get("q", "")
-        district, _, state = query.partition(",")
-        state = state.split(",")[0].strip()
-        return MockHttpxResponse(200, [{"lat": "17.96", "lon": "79.59", "name": district,
-            "category": "boundary", "type": "administrative",
-            "address": {"country_code": "in", "state": state, "state_district": district}}])
-    return MockHttpxResponse(200, OPEN_METEO_MOCK_DATA)
+    params = params or {}
+    if url.endswith("/search.json"):
+        district, _, rest = params.get("q", "").partition(",")
+        state = rest.split(",")[0].strip()
+        lat, lon = (15.5, 78.5) if district.strip() == "Khammam" else (17.96, 79.59)
+        return MockHttpxResponse(200, [{"name": district.strip(), "region": state, "country": "India", "lat": lat, "lon": lon, "id": 1}])
+    payload = json.loads(json.dumps(WEATHERAPI_MOCK_DATA))
+    query = params.get("q", "")
+    lat, lon = query.split(",")
+    if float(lat) < 16:
+        payload["location"].update({"name": "Khammam", "region": "Telangana", "lat": float(lat), "lon": float(lon)})
+    return MockHttpxResponse(200, payload)
 
-OPEN_METEO_MOCK_DATA = {
-    "current": {
-        "temperature_2m": 29.5,
-        "apparent_temperature": 31.0,
-        "relative_humidity_2m": 65,
-        "wind_speed_10m": 12.0,
-        "weather_code": 1
-    },
-    "daily": {
-        "time": ["2026-11-05", "2026-11-06", "2026-11-07", "2026-11-08", "2026-11-09", "2026-11-10", "2026-11-11"],
-        "temperature_2m_max": [31.0, 32.0, 31.5, 30.0, 31.0, 32.5, 33.0],
-        "temperature_2m_min": [22.0, 21.5, 22.0, 21.0, 22.0, 23.0, 22.5],
-        "weather_code": [1, 2, 3, 0, 1, 2, 1],
-        "precipitation_probability_max": [15, 20, 25, 10, 15, 20, 15]
-    }
+WEATHERAPI_MOCK_DATA = {
+    "location": {"name": "Warangal", "region": "Telangana", "country": "India", "lat": 17.96, "lon": 79.59},
+    "current": {"temp_c": 29.5, "feelslike_c": 31.0, "humidity": 65, "wind_kph": 12.0,
+                "wind_dir": "SW", "vis_km": 10.0, "precip_mm": 0.0,
+                "condition": {"text": "Partly cloudy", "code": 1003, "icon": "//cdn.weatherapi.com/weather/64x64/day/116.png"}},
+    "forecast": {"forecastday": [
+        {"date": "2026-11-09", "day": {"maxtemp_c": 31.0, "mintemp_c": 22.0, "daily_chance_of_rain": 15, "condition": {"text": "Partly cloudy", "code": 1003, "icon": "//cdn.weatherapi.com/weather/64x64/day/116.png"}}},
+        {"date": "2026-11-10", "day": {"maxtemp_c": 32.0, "mintemp_c": 21.5, "daily_chance_of_rain": 20, "condition": {"text": "Cloudy", "code": 1006, "icon": "//cdn.weatherapi.com/weather/64x64/day/119.png"}}},
+        {"date": "2026-11-11", "day": {"maxtemp_c": 31.5, "mintemp_c": 22.0, "daily_chance_of_rain": 25, "condition": {"text": "Rain", "code": 1183, "icon": "//cdn.weatherapi.com/weather/64x64/day/296.png"}}},
+    ]},
 }
 
 class TestSequentialSlotFilling(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        settings.WEATHERAPI_KEY = "offline-test-key"
         init_db()
 
     def setUp(self):
@@ -349,7 +351,7 @@ class TestSequentialSlotFilling(unittest.TestCase):
             irrigation_advice="Today's irrigation advice",
             spray_suitability="Check hourly forecast",
             produce_protection="Protect produce",
-            source="Open-Meteo test fixture",
+            source="WeatherAPI.com test fixture",
             forecast=[
                 ForecastDay(day_name="Today", date="2026-11-06", temp_max=30, temp_min=20,
                             condition="Clear Sky", precipitation_probability=85),
@@ -370,7 +372,7 @@ class TestSequentialSlotFilling(unittest.TestCase):
         self.assertIn("Tomorrow's forecast for Warangal (2026-11-07)", result.reply_text)
         self.assertIn("0% chance of rain", result.reply_text)
         self.assertNotIn("85%", result.reply_text)
-        self.assertEqual(result.feature_data["source"], "Open-Meteo test fixture")
+        self.assertEqual(result.feature_data["source"], "WeatherAPI.com test fixture")
 
     def test_hindi_market_price_flow(self):
         conv_id = "test_slot_hi_1"

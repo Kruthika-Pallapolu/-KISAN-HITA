@@ -63,12 +63,12 @@ class Settings(BaseModel):
 
     # Optional server-side official market feed credential. Never sent to the frontend.
 
-    # Deterministic, explicitly labelled prototype data for offline demos.
-    # Set DEMO_DATA_ENABLED=false to use the configured live providers instead.
+    # Deterministic demo mode is used by explicitly demo-backed features such
+    # as market prices. Weather always requires the live WeatherAPI provider.
     DEMO_DATA_ENABLED: bool = os.getenv("DEMO_DATA_ENABLED", "true").lower() == "true"
     
-    # Weather provider settings (Open-Meteo free API for live Indian district coordinates)
-    WEATHER_API_BASE: str = "https://api.open-meteo.com/v1/forecast"
+    # WeatherAPI.com credentials stay server-side under one canonical name.
+    WEATHERAPI_KEY: str = os.getenv("WEATHERAPI_KEY", "")
     WEATHER_TIMEOUT_SECONDS: float = float(os.getenv("WEATHER_TIMEOUT_SECONDS", "6.0"))
     
     # Supported languages: Telugu, English, Hindi, Tamil, Kannada, Malayalam, Marathi

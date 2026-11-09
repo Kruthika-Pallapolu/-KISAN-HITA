@@ -192,7 +192,7 @@ Protected features require a valid account or guest session cookie as enforced b
 
 ## Data and provider configuration
 
-- `DEMO_DATA_ENABLED=true` (the code default and `.env.example` value) enables deterministic weather demo data. It is labeled as demo and is not a live observation. Set it to `false` to use the configured live weather path; live weather depends on Open-Meteo and resolvable district coordinates.
+- Weather always uses WeatherAPI.com live data and never falls back to synthetic weather. Set backend-only `WEATHERAPI_KEY` for both district and coordinate requests. District lookups use WeatherAPI.com Search plus exact state/district/country validation before requesting a forecast at the verified coordinates. A missing key or provider failure is returned as an unavailable error. `DEMO_DATA_ENABLED` applies only to other explicitly demo-backed features, such as market-price references.
 - Market prices use the included deterministic illustrative dataset. Results must be treated as demo references, not live AGMARKNET observations.
 - Gemini settings are `GEMINI_ENABLED`, `GEMINI_API_KEY`, and `GEMINI_MODEL`; current default model is `gemini-3.1-flash-lite`.
 - Gnani settings are `GNANI_LIVE_ENABLED`, `GNANI_PRISMA_ENABLED`, `GNANI_TIMBRE_ENABLED`, `GNANI_API_KEY`, `GNANI_PRISMA_MODEL`, `GNANI_TIMBRE_MODEL`, and `GNANI_TIMBRE_VOICE_EN`, `_TE`, `_HI`, `_TA`, `_KN`, `_ML`, `_MR`. The two modality switches cannot override the master switch. All three enable switches default to false. Credentials stay in the backend environment.

@@ -41,6 +41,15 @@ test('assistant UI renders the corrected backend reply text without replacing it
 test('Weather requests the selected location, discards stale responses and offers retry', () => {
   const page = source('../pages/WeatherPage.tsx');
   assert.match(page, /new URLSearchParams\(\{ district, state, language \}\)/);
+  assert.match(page, /fetch\(`\/api\/weather\/current\?\$\{new URLSearchParams\(\{ district, state, language \}\)\.toString\(\)\}`/);
+  assert.match(page, /credentials: 'same-origin'/);
+  assert.match(page, /interface WeatherResponse \{[\s\S]*?district: string;[\s\S]*?state: string;[\s\S]*?temperature: number;[\s\S]*?forecast: WeatherDay\[\];/);
+  assert.match(page, /coordinate_source\?: string/);
+  assert.match(page, /weatherData\.coordinate_source && \([\s\S]*?weatherData\.coordinate_source/);
+  assert.match(page, /setWeatherData\(data\)/);
+  assert.match(page, /activeRequest\.current\?\.abort\(\)/);
+  assert.match(page, /setWeatherData\(null\)/);
+  assert.match(page, /request !== requestId\.current/);
   assert.match(page, /\/api\/weather\/current\/coordinates/);
   assert.match(page, /latitude: coordinates\.latitude, longitude: coordinates\.longitude/);
   assert.match(page, /if \(!profileLoaded \|\| !locationInitialized\) return/);
@@ -58,18 +67,18 @@ test('Weather requests the selected location, discards stale responses and offer
   assert.doesNotMatch(page, /getStateForDistrict\(profile\.district\)/);
 });
 
-test('Weather GPS is user initiated, exact-coordinate based and never saved as profile location', () => {
+test('Weather GPS sends exact coordinates to the backend without browser geocoding or saving a profile location', () => {
   const page = source('../pages/WeatherPage.tsx');
   const fields = source('../components/FarmLocationFields.tsx');
-  const geography = source('../services/geography.ts');
-  const gpsHandler = page.match(/const handleCurrentLocation = \(result: GeolocationResult\) => \{([\s\S]*?)\n  \};/)?.[1] || '';
-  assert.match(fields, /onClick=\{\(\) => void handleLiveLocation\(\)\}/);
-  assert.match(fields, /onCurrentLocation\?\.\(result\)/);
-  assert.match(geography, /navigator\.geolocation\.getCurrentPosition/);
-  assert.match(geography, /coordinates: \{ latitude, longitude \}/);
-  assert.doesNotMatch(geography, /localStorage|sessionStorage/);
-  assert.match(gpsHandler, /setGpsCoordinates\(result\.coordinates\)/);
-  assert.doesNotMatch(gpsHandler, /updateProfile/);
+  const gpsHandler = page.match(/const handleCurrentLocation = \(\) => \{([\s\S]*?)\n  \};/)?.[1] || '';
+  assert.match(page, /navigator\.geolocation\.getCurrentPosition/);
+  assert.match(page, /setGpsCoordinates\(coordinates\)/);
+  assert.match(page, /showCurrentLocation=\{false\}/);
+  assert.match(page, /data-weather-current-location/);
+  assert.match(gpsHandler, /position\.coords\.latitude/);
+  assert.match(gpsHandler, /position\.coords\.longitude/);
+  assert.doesNotMatch(gpsHandler, /updateProfile|fetch\(['"]https?:/);
+  assert.match(fields, /showCurrentLocation\?: boolean/);
 });
 
 test('Assistant input renders one Prisma microphone and never falls back to browser recognition', () => {

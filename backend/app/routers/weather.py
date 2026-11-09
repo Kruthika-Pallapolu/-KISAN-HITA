@@ -6,7 +6,7 @@ from ..auth import current_farmer_session
 from ..models.schemas import WeatherData, WeatherCurrentRequest, WeatherCoordinatesRequest, normalize_language_code
 from ..services.weather_service import (
     WeatherService, WeatherCoverageUnavailable, WeatherGeocodingUnavailable,
-    WeatherProviderUnavailable,
+    WeatherProviderUnavailable, WeatherConfigurationMissing,
 )
 from ..rate_limit import enforce_rate_limit
 
@@ -36,6 +36,8 @@ async def get_current_weather(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": "weather_coverage_unavailable", "message": str(exc)})
     except WeatherGeocodingUnavailable as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": "weather_geocoding_unavailable", "message": str(exc)})
+    except WeatherConfigurationMissing as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": "weather_configuration_missing", "message": str(exc)})
     except (WeatherProviderUnavailable, RuntimeError) as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": "weather_provider_unavailable", "message": str(exc)})
     except Exception as exc:
@@ -57,6 +59,8 @@ async def get_current_weather_by_coordinates(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": "weather_coverage_unavailable", "message": str(exc)})
     except WeatherGeocodingUnavailable as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": "weather_geocoding_unavailable", "message": str(exc)})
+    except WeatherConfigurationMissing as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": "weather_configuration_missing", "message": str(exc)})
     except (WeatherProviderUnavailable, RuntimeError) as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": "weather_provider_unavailable", "message": str(exc)})
     except Exception as exc:
@@ -74,6 +78,8 @@ async def get_current_weather_post(req: WeatherCurrentRequest, request: Request,
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": "weather_coverage_unavailable", "message": str(exc)})
     except WeatherGeocodingUnavailable as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": "weather_geocoding_unavailable", "message": str(exc)})
+    except WeatherConfigurationMissing as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": "weather_configuration_missing", "message": str(exc)})
     except (WeatherProviderUnavailable, RuntimeError) as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": "weather_provider_unavailable", "message": str(exc)})
     except Exception as exc:
