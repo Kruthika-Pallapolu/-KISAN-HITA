@@ -14,6 +14,8 @@ from app.config import settings
 from app.services.weather_service import (
     WeatherCoverageUnavailable,
     WeatherGeocodingUnavailable,
+    WeatherLocationAmbiguous,
+    WeatherLocationNotFound,
     WeatherProviderUnavailable,
     WeatherService,
 )
@@ -120,6 +122,59 @@ class TestWeatherDirectoryAndWeatherApi(unittest.IsolatedAsyncioTestCase):
             WeatherService._canonical_location(name, None)
         state = next(s["name"] for s in DIRECTORY["states"] if s["code"] == duplicated[0]["stateCode"])
         self.assertEqual(WeatherService._canonical_location(name, state)[0]["name"], state)
+
+    async def test_freeform_city_search_fetches_a_verified_real_location_forecast(self):
+        cases = [
+            ("Hyderabad", "Hyderabad", "Telangana", "India", 17.385, 78.4867),
+            ("Chennai, Tamil Nadu, India", "Chennai", "Tamil Nadu", "India", 13.0827, 80.2707),
+            ("Paris, France", "Paris", "Ile-de-France", "France", 48.8566, 2.3522),
+        ]
+        for query, name, region, country, lat, lon in cases:
+            with self.subTest(query=query):
+                payload = forecast_payload(name, region, country)
+                payload["location"].update({"lat": lat, "lon": lon})
+                calls = []
+
+                async def get(_client, url, params=None):
+                    calls.append((url, params or {}))
+                    if url.endswith("/search.json"):
+                        return FakeResponse([search_result(name, region, country, lat, lon)])
+                    return FakeResponse(payload)
+
+                with patch("httpx.AsyncClient.get", new=get):
+                    result = await WeatherService.get_location_weather(query)
+                self.assertEqual((result.district, result.state, result.country), (name, region, country))
+                self.assertEqual(result.temperature, 29.5)
+                self.assertEqual([url.rsplit("/", 1)[-1] for url, _ in calls], ["search.json", "forecast.json"])
+                self.assertEqual(calls[0][1]["q"], query)
+                self.assertEqual(calls[1][1]["q"], f"{lat},{lon}")
+
+    async def test_freeform_search_reports_empty_and_ambiguous_locations(self):
+        with patch("httpx.AsyncClient.get", new=AsyncMock(return_value=FakeResponse([]))):
+            with self.assertRaises(WeatherLocationNotFound):
+                await WeatherService.get_location_weather("No Such Place")
+        candidates = [
+            search_result("Springfield", "Illinois", "United States", 39.78, -89.64),
+            search_result("Springfield", "Missouri", "United States", 37.21, -93.29),
+        ]
+        with patch("httpx.AsyncClient.get", new=AsyncMock(return_value=FakeResponse(candidates))):
+            with self.assertRaises(WeatherLocationAmbiguous):
+                await WeatherService.get_location_weather("Springfield")
+
+    async def test_freeform_search_rejects_forecast_from_different_country_or_region(self):
+        selected = search_result("Hyderabad", "Telangana", "India", 17.385, 78.4867)
+        for payload in (
+            forecast_payload("Hyderabad", "Telangana", "Pakistan"),
+            forecast_payload("Hyderabad", "Andhra Pradesh", "India"),
+        ):
+            payload["location"].update({"lat": 17.385, "lon": 78.4867})
+
+            async def get(_client, url, params=None):
+                return FakeResponse([selected] if url.endswith("/search.json") else payload)
+
+            with patch("httpx.AsyncClient.get", new=get):
+                with self.assertRaises(WeatherCoverageUnavailable):
+                    await WeatherService.get_location_weather("Hyderabad")
 
     async def test_renamed_district_aliases_resolve_to_canonical_entries(self):
         self.assertEqual(WeatherService._canonical_location("Sri Potti Sriramulu Nellore", "Andhra Pradesh")[1]["name"], "Nellore")

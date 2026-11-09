@@ -5,7 +5,7 @@ import { useAssistant } from '../context/AssistantContext';
 import { localizeLocation, localizeWeatherCondition } from '../i18n/agriculture';
 import { FarmLocationFields } from '../components/FarmLocationFields';
 import { getState, isDistrictInState } from '../services/geography';
-import { CloudSun, Droplets, Wind, CloudRain, Shield, AlertTriangle, Volume2, Square, RefreshCw, MapPin, ArrowLeft, Compass, Eye } from 'lucide-react';
+import { CloudSun, Droplets, Wind, CloudRain, Shield, AlertTriangle, Volume2, Square, RefreshCw, MapPin, ArrowLeft, Compass, Eye, Search } from 'lucide-react';
 
 interface WeatherDay {
   day_name: string;
@@ -22,6 +22,7 @@ interface WeatherDay {
 interface WeatherResponse {
   district: string;
   state: string;
+  country?: string;
   temperature: number;
   feels_like?: number;
   condition: string;
@@ -55,6 +56,8 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
   const [selectedState, setSelectedState] = useState('');
   const [selectedDistrict, setSelectedDistrict] = useState('');
   const [locationInitialized, setLocationInitialized] = useState(false);
+  const [locationQuery, setLocationQuery] = useState('');
+  const [activeLocationQuery, setActiveLocationQuery] = useState('');
   const [gpsCoordinates, setGpsCoordinates] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locating, setLocating] = useState(false);
   const [currentLocationError, setCurrentLocationError] = useState<string | null>(null);
@@ -63,6 +66,9 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(0);
   const activeRequest = useRef<AbortController | null>(null);
+  const geolocationRequestId = useRef(0);
+  const automaticLocationRequested = useRef(false);
+  const automaticLocationPending = useRef(true);
   const languageLocale: Record<string, string> = { en: 'en-IN', te: 'te-IN', hi: 'hi-IN', ta: 'ta-IN', kn: 'kn-IN', ml: 'ml-IN', mr: 'mr-IN' };
   const fetchWeather = async (district: string, state: string, coordinates?: { latitude: number; longitude: number } | null) => {
     if (!coordinates && (!state || !district || !isDistrictInState(district, state))) return;
@@ -114,8 +120,69 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
     }
   };
 
+  const searchWeatherLocation = async (rawQuery: string) => {
+    const query = rawQuery.trim();
+    if (query.length < 2) {
+      setWeatherData(null);
+      setError(t('weatherSearchRequired'));
+      return;
+    }
+    const request = ++requestId.current;
+    geolocationRequestId.current += 1;
+    automaticLocationPending.current = false;
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
+    setActiveLocationQuery(query);
+    setGpsCoordinates(null);
+    setLocating(false);
+    setWeatherData(null);
+    setLoading(true);
+    setError(null);
+    setCurrentLocationError(null);
+    try {
+      const params = new URLSearchParams({ query, language });
+      const res = await fetch(`/api/weather/search?${params.toString()}`, {
+        signal: controller.signal, credentials: 'same-origin',
+      });
+      if (!res.ok) {
+        let code = '';
+        try {
+          const payload = await res.clone().json();
+          code = typeof payload?.detail === 'object' ? payload.detail.code || '' : '';
+        } catch { /* Use HTTP status when an older backend returns plain text. */ }
+        const message = code === 'weather_location_not_found'
+          ? t('weatherSearchNoResults')
+          : code === 'weather_location_ambiguous'
+            ? t('weatherSearchAmbiguous')
+            : code === 'weather_configuration_missing'
+              ? t('weatherConfigurationMissing')
+              : code === 'weather_coverage_unavailable'
+                ? t('weatherCoverageUnavailable')
+                : res.status >= 500
+                  ? t('weatherUnavailable')
+                  : res.status === 422
+                    ? t('weatherSearchAmbiguous')
+                    : t('weatherRequestFailed');
+        throw new Error(message);
+      }
+      const data: WeatherResponse = await res.json();
+      if (request !== requestId.current) return;
+      setWeatherData(data);
+    } catch (err: any) {
+      if (controller.signal.aborted || request !== requestId.current) return;
+      console.error('Weather location search error:', err);
+      setError(err instanceof Error ? err.message : t('weatherRequestFailed'));
+    } finally {
+      if (request === requestId.current) setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!profileLoaded || !locationInitialized) return;
+    if (activeLocationQuery) return;
+    if (locating && !gpsCoordinates) return;
+    if (automaticLocationPending.current && !gpsCoordinates) return;
     if (gpsCoordinates) fetchWeather(selectedDistrict, selectedState, gpsCoordinates);
     else if (selectedDistrict && selectedState && isDistrictInState(selectedDistrict, selectedState)) fetchWeather(selectedDistrict, selectedState);
     else {
@@ -125,7 +192,7 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
       setError(null);
       setLoading(false);
     }
-  }, [profileLoaded, locationInitialized, selectedDistrict, selectedState, gpsCoordinates, language]);
+  }, [profileLoaded, locationInitialized, selectedDistrict, selectedState, gpsCoordinates, language, currentLocationError, activeLocationQuery, locating]);
 
   useEffect(() => () => {
     requestId.current += 1;
@@ -142,16 +209,22 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
   }, [profileLoaded, profile.state, profile.district]);
 
   const handleLocationChange = (state: string, district: string) => {
+    geolocationRequestId.current += 1;
+    automaticLocationPending.current = false;
     setWeatherData(null);
     setError(null);
     setGpsCoordinates(null);
+    setActiveLocationQuery('');
+    setLocationQuery('');
     setCurrentLocationError(null);
     setSelectedState(state);
     setSelectedDistrict(district);
     updateProfile({ state, district });
   };
 
-  const handleCurrentLocation = () => {
+  const handleCurrentLocation = (automatic = false) => {
+    if (!automatic) automaticLocationPending.current = false;
+    const geolocationRequest = ++geolocationRequestId.current;
     activeRequest.current?.abort();
     requestId.current += 1;
     setLoading(false);
@@ -159,24 +232,32 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
     setError(null);
     setCurrentLocationError(null);
     setGpsCoordinates(null);
+    setActiveLocationQuery('');
+    setLocationQuery('');
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      automaticLocationPending.current = false;
       setCurrentLocationError(t('locationUnsupported'));
       return;
     }
     const host = window.location.hostname;
     if (!window.isSecureContext && host !== 'localhost' && host !== '127.0.0.1') {
+      automaticLocationPending.current = false;
       setCurrentLocationError(t('locationHttpsRequired'));
       return;
     }
     setLocating(true);
     try {
       navigator.geolocation.getCurrentPosition((position) => {
+        if (geolocationRequest !== geolocationRequestId.current) return;
+        automaticLocationPending.current = false;
         const coordinates = { latitude: position.coords.latitude, longitude: position.coords.longitude };
         setSelectedState('');
         setSelectedDistrict('');
         setGpsCoordinates(coordinates);
         setLocating(false);
       }, (positionError) => {
+        if (geolocationRequest !== geolocationRequestId.current) return;
+        automaticLocationPending.current = false;
         const message = positionError.code === 1
           ? t('locationPermissionDenied')
           : positionError.code === 2
@@ -186,9 +267,22 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
         setLocating(false);
       }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 });
     } catch {
+      if (geolocationRequest !== geolocationRequestId.current) return;
+      automaticLocationPending.current = false;
       setCurrentLocationError(t('locationUnavailable'));
       setLocating(false);
     }
+  };
+
+  useEffect(() => {
+    if (!profileLoaded || !locationInitialized || automaticLocationRequested.current) return;
+    automaticLocationRequested.current = true;
+    handleCurrentLocation(true);
+  }, [profileLoaded, locationInitialized]);
+
+  const handleLocationSearch = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void searchWeatherLocation(locationQuery);
   };
 
   const clearCurrentLocationError = () => setCurrentLocationError(null);
@@ -278,10 +372,26 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
               showCurrentLocation={false}
               disabled={!profileLoaded || !locationInitialized}
             />
-            <button type="button" className="btn btn-secondary" data-weather-current-location onClick={handleCurrentLocation} disabled={locating || !profileLoaded || !locationInitialized}>
+            <button type="button" className="btn btn-secondary" data-weather-current-location onClick={() => handleCurrentLocation()} disabled={locating || !profileLoaded || !locationInitialized}>
               <MapPin size={15} aria-hidden="true" />
               {locating ? t('detectingLocation') : t('useCurrentLocation')}
             </button>
+            <form className="weather-freeform-search" data-weather-search-form onSubmit={handleLocationSearch} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexBasis: '100%' }}>
+              <input
+                type="search"
+                value={locationQuery}
+                onChange={(event) => setLocationQuery(event.target.value)}
+                placeholder={t('weatherSearchPlaceholder')}
+                aria-label={t('weatherSearchLabel')}
+                autoComplete="off"
+                maxLength={200}
+                style={{ minWidth: 0, flex: 1, padding: '0.7rem 0.9rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-card)', background: 'var(--char-input)', color: 'var(--cream)' }}
+              />
+              <button type="submit" className="btn btn-secondary" disabled={loading || locationQuery.trim().length < 2}>
+                <Search size={16} aria-hidden="true" />
+                <span>{t('weatherSearchButton')}</span>
+              </button>
+            </form>
           </div>
 
           <div className="weather-location-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
@@ -306,11 +416,13 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
 
             {/* Refresh */}
             <button
-              onClick={() => (gpsCoordinates || selectedDistrict) && fetchWeather(selectedDistrict, selectedState, gpsCoordinates)}
+              onClick={() => activeLocationQuery
+                ? void searchWeatherLocation(activeLocationQuery)
+                : (gpsCoordinates || selectedDistrict) && fetchWeather(selectedDistrict, selectedState, gpsCoordinates)}
               className="btn btn-secondary"
               style={{ padding: '0.55rem 0.9rem' }}
               title={t('weatherRefresh')}
-              disabled={(!selectedDistrict && !gpsCoordinates) || loading}
+              disabled={(!selectedDistrict && !gpsCoordinates && !activeLocationQuery) || loading}
             >
               <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             </button>
@@ -329,7 +441,7 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
         {loading && !weatherData && profileLoaded && (
           <div style={{ textAlign: 'center', padding: '4rem 0' }}>
             <div className="mono" style={{ color: 'var(--amber)', fontSize: '1.1rem' }}>
-              {t('weatherLoading')} {gpsCoordinates ? t('weatherCurrentLocation') : localizeLocation(selectedDistrict, language)}…
+              {t('weatherLoading')} {gpsCoordinates ? t('weatherCurrentLocation') : activeLocationQuery || localizeLocation(selectedDistrict, language)}…
             </div>
           </div>
         )}
@@ -366,7 +478,7 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
               <div className="weather-current-summary" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '1.5rem', marginBottom: '1.5rem' }}>
                 <div>
                   <div className="mono" style={{ color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.3rem' }}>
-                    {gpsCoordinates ? `${t('weatherCurrentLocation')} · ` : ''}{localizeLocation(weatherData.district, language)} • {localizeLocation(weatherData.state, language)}
+                    {gpsCoordinates ? `${t('weatherCurrentLocation')} · ` : ''}{localizeLocation(weatherData.district, language)} • {localizeLocation(weatherData.state, language)}{weatherData.country && weatherData.country.toLowerCase() !== 'india' ? ` • ${weatherData.country}` : ''}
                   </div>
                   <div className="weather-current-reading" style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
                     {weatherData.condition_icon_url && <img src={weatherData.condition_icon_url} alt="" width="64" height="64" loading="lazy" />}

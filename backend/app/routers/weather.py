@@ -7,6 +7,7 @@ from ..models.schemas import WeatherData, WeatherCurrentRequest, WeatherCoordina
 from ..services.weather_service import (
     WeatherService, WeatherCoverageUnavailable, WeatherGeocodingUnavailable,
     WeatherProviderUnavailable, WeatherConfigurationMissing,
+    WeatherLocationNotFound, WeatherLocationAmbiguous,
 )
 from ..rate_limit import enforce_rate_limit
 
@@ -16,6 +17,36 @@ _GEO_DIRECTORY_PATH = Path(__file__).resolve().parents[3] / "frontend" / "src" /
 with _GEO_DIRECTORY_PATH.open(encoding="utf-8") as _directory_file:
     _GEO_DIRECTORY = json.load(_directory_file)
 _STATE_NAMES = {state["code"]: state["name"] for state in _GEO_DIRECTORY["states"]}
+
+
+@router.get("/search", response_model=WeatherData)
+async def search_weather_location(
+    request: Request,
+    query: str = Query(..., min_length=2, max_length=200, description="City, district, or place name"),
+    language: str = Query("en", min_length=2, max_length=5, description="Language code"),
+    account_id: str = Depends(current_farmer_session),
+):
+    try:
+        enforce_rate_limit(None, "weather-session", 20, 60, account_id)
+        enforce_rate_limit(request, "weather-search-ip", 60, 60)
+        language = normalize_language_code(language)
+        return await WeatherService.get_location_weather(query, language)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    except WeatherLocationNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "weather_location_not_found", "message": str(exc)})
+    except WeatherLocationAmbiguous as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"code": "weather_location_ambiguous", "message": str(exc)})
+    except WeatherCoverageUnavailable as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": "weather_coverage_unavailable", "message": str(exc)})
+    except WeatherGeocodingUnavailable as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": "weather_geocoding_unavailable", "message": str(exc)})
+    except WeatherConfigurationMissing as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": "weather_configuration_missing", "message": str(exc)})
+    except (WeatherProviderUnavailable, RuntimeError) as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": "weather_provider_unavailable", "message": str(exc)})
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Weather location search failed.")
 
 @router.get("/current", response_model=WeatherData)
 async def get_current_weather(

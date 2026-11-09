@@ -87,6 +87,7 @@ class ForecastDay(BaseModel):
 class WeatherData(BaseModel):
     district: str
     state: str
+    country: Optional[str] = None
     temperature: float
     feels_like: Optional[float] = None
     condition: str

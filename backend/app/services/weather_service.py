@@ -39,6 +39,14 @@ class WeatherConfigurationMissing(WeatherProviderUnavailable):
     """Required backend-only WeatherAPI configuration is absent."""
 
 
+class WeatherLocationNotFound(RuntimeError):
+    """WeatherAPI search did not find the requested location."""
+
+
+class WeatherLocationAmbiguous(RuntimeError):
+    """WeatherAPI search returned multiple plausible locations."""
+
+
 def get_localized_weather_advice(rain_prob: int, wind_speed: float, language: str) -> tuple[str, str, str, str]:
     lang = language[:2].lower()
 
@@ -216,6 +224,62 @@ class WeatherService:
         if len(candidates) != 1:
             raise ValueError(f"'{district}' matches more than one district in {selected_state['name']}. Select a district using its full name.")
         return selected_state, candidates[0]
+
+    @staticmethod
+    def _resolve_search_result(query: str, results: Any) -> dict:
+        if not isinstance(results, list):
+            raise WeatherProviderUnavailable("WeatherAPI.com returned an invalid location search response.")
+        valid = []
+        for item in results:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            country = str(item.get("country") or "").strip()
+            region = str(item.get("region") or "").strip()
+            if not name or not country:
+                continue
+            try:
+                latitude, longitude = WeatherService._valid_coordinates(item.get("lat"), item.get("lon"))
+            except WeatherCoverageUnavailable:
+                continue
+            valid.append({**item, "name": name, "region": region, "country": country, "lat": latitude, "lon": longitude})
+        if not valid:
+            raise WeatherLocationNotFound("No matching location was found. Try adding a state, region, or country.")
+
+        normalized_query = WeatherService._normalize_name(query)
+        exact = []
+        for item in valid:
+            forms = {
+                WeatherService._normalize_name(item["name"]),
+                WeatherService._normalize_name(", ".join(part for part in (item["name"], item["region"]) if part)),
+                WeatherService._normalize_name(", ".join(part for part in (item["name"], item["region"], item["country"]) if part)),
+                WeatherService._normalize_name(", ".join(part for part in (item["name"], item["country"]) if part)),
+            }
+            if normalized_query in forms:
+                exact.append(item)
+        candidates = exact if exact else valid if len(valid) == 1 else []
+        if not candidates:
+            raise WeatherLocationAmbiguous("Several locations match that search. Add the region or country to narrow it down.")
+        # Identical display names can still be different places; never pick the
+        # first provider result silently.
+        unique = {(item["name"].casefold(), item["region"].casefold(), item["country"].casefold(), item["lat"], item["lon"]): item for item in candidates}
+        if len(unique) != 1:
+            raise WeatherLocationAmbiguous("Several locations match that search. Add the region or country to narrow it down.")
+        return next(iter(unique.values()))
+
+    @staticmethod
+    async def get_location_weather(location_query: str, language: str = "en") -> WeatherData:
+        query = (location_query or "").strip()
+        if len(query) < 2:
+            raise ValueError("Enter at least two characters to search for a location.")
+        results = await WeatherService._weatherapi_request("search.json", {"q": query})
+        result = WeatherService._resolve_search_result(query, results)
+        return await WeatherService._fetch_forecast(
+            result["lat"], result["lon"], result["name"], result["region"] or result["country"], language,
+            "WeatherAPI.com Search API result verified against the requested location",
+            expected_country=result["country"], expected_region=result["region"],
+            searched_location_name=result["name"],
+        )
 
     @staticmethod
     def _valid_coordinates(latitude: Any, longitude: Any) -> tuple[float, float]:
@@ -459,13 +523,15 @@ class WeatherService:
         lat: float, lon: float, district_name: str, state_name: str, language: str,
         coordinate_source: str = "", expected_state: Optional[str] = None,
         expected_district: Optional[dict] = None,
+        expected_country: Optional[str] = None, expected_region: Optional[str] = None,
+        searched_location_name: Optional[str] = None,
     ) -> WeatherData:
         lat, lon = WeatherService._valid_coordinates(lat, lon)
         cache_district = district_name.casefold() if district_name else "coordinates"
         cache_state = state_name.casefold() if state_name else "coordinates"
         # Keep location identity precise enough that nearby farm coordinates
         # do not share another point's live forecast cache entry.
-        cache_key = (round(lat, 5), round(lon, 5), language, cache_district, cache_state)
+        cache_key = (round(lat, 5), round(lon, 5), language, cache_district, cache_state, (expected_country or "India").casefold())
         now = time.monotonic()
         with WeatherService._cache_lock:
             cached = WeatherService._forecast_cache.get(cache_key)
@@ -488,18 +554,25 @@ class WeatherService:
 
             country = str(location.get("country") or "").strip()
             provider_state = str(location.get("region") or "").strip()
-            if country.casefold() != "india":
+            if expected_country:
+                if WeatherService._normalize_name(country) != WeatherService._normalize_name(expected_country):
+                    raise WeatherCoverageUnavailable("WeatherAPI.com returned a different country than the searched location.")
+                if expected_region and WeatherService._normalize_name(provider_state) != WeatherService._normalize_name(expected_region):
+                    raise WeatherCoverageUnavailable("WeatherAPI.com returned a different region than the searched location.")
+                canonical_state = expected_region or provider_state or country
+                provider_district = searched_location_name or str(location.get("name") or "").strip()
+            elif country.casefold() != "india":
                 if expected_state:
                     raise WeatherCoverageUnavailable("WeatherAPI.com did not return an Indian location for the selected district.")
                 raise ValueError("GPS coordinates could not be verified as a location in India.")
-            matching_states = [s for s in _STATES if WeatherService._same_state(s["name"], provider_state)]
-            if not provider_state or len(matching_states) != 1:
-                raise WeatherCoverageUnavailable("WeatherAPI.com could not verify the Indian state for this location.")
-            canonical_state = matching_states[0]["name"]
-            if expected_state and not WeatherService._same_state(provider_state, expected_state):
-                raise WeatherCoverageUnavailable("WeatherAPI.com resolved the request to a different state; no alternate location was used.")
-
-            provider_district = str(location.get("name") or "").strip()
+            else:
+                matching_states = [s for s in _STATES if WeatherService._same_state(s["name"], provider_state)]
+                if not provider_state or len(matching_states) != 1:
+                    raise WeatherCoverageUnavailable("WeatherAPI.com could not verify the Indian state for this location.")
+                canonical_state = matching_states[0]["name"]
+                if expected_state and not WeatherService._same_state(provider_state, expected_state):
+                    raise WeatherCoverageUnavailable("WeatherAPI.com resolved the request to a different state; no alternate location was used.")
+                provider_district = str(location.get("name") or "").strip()
             if expected_district:
                 # The Search API already verified the requested district, state,
                 # country and coordinates. Forecast's reverse label can be a
@@ -576,6 +649,7 @@ class WeatherService:
             weather = WeatherData(
                 district=provider_district or district_name or "Selected location",
                 state=canonical_state,
+                country=country,
                 temperature=temp,
                 feels_like=feels_like,
                 condition=condition,

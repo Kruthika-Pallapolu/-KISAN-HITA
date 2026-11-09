@@ -70,7 +70,7 @@ test('Weather requests the selected location, discards stale responses and offer
 test('Weather GPS sends exact coordinates to the backend without browser geocoding or saving a profile location', () => {
   const page = source('../pages/WeatherPage.tsx');
   const fields = source('../components/FarmLocationFields.tsx');
-  const gpsHandler = page.match(/const handleCurrentLocation = \(\) => \{([\s\S]*?)\n  \};/)?.[1] || '';
+  const gpsHandler = page.match(/const handleCurrentLocation = \(automatic = false\) => \{([\s\S]*?)\n  \};/)?.[1] || '';
   assert.match(page, /navigator\.geolocation\.getCurrentPosition/);
   assert.match(page, /setGpsCoordinates\(coordinates\)/);
   assert.match(page, /showCurrentLocation=\{false\}/);
@@ -79,6 +79,19 @@ test('Weather GPS sends exact coordinates to the backend without browser geocodi
   assert.match(gpsHandler, /position\.coords\.longitude/);
   assert.doesNotMatch(gpsHandler, /updateProfile|fetch\(['"]https?:/);
   assert.match(fields, /showCurrentLocation\?: boolean/);
+});
+
+test('Weather supports any typed location through the WeatherAPI-backed search route', () => {
+  const page = source('../pages/WeatherPage.tsx');
+  assert.match(page, /fetch\(`\/api\/weather\/search\?\$\{params\.toString\(\)\}`/);
+  assert.match(page, /new URLSearchParams\(\{ query, language \}\)/);
+  assert.match(page, /weatherSearchNoResults/);
+  assert.match(page, /weatherSearchAmbiguous/);
+  assert.match(page, /weatherSearchPlaceholder/);
+  assert.match(page, /setWeatherData\(null\)/);
+  assert.match(page, /automaticLocationRequested/);
+  assert.match(page, /handleCurrentLocation\(true\)/);
+  assert.doesNotMatch(page, /district:\s*['"]Nellore['"]/);
 });
 
 test('Assistant input renders one Prisma microphone and never falls back to browser recognition', () => {
