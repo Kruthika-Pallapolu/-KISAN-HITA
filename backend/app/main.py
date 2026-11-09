@@ -1,8 +1,10 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Response, status
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
@@ -99,3 +101,8 @@ def readiness_check(response: Response):
         "version": settings.APP_VERSION,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+# Serve the production React frontend from the same Render service.
+FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if FRONTEND_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
