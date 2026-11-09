@@ -257,8 +257,10 @@ class WeatherService:
             }
             if normalized_query in forms:
                 exact.append(item)
-        candidates = exact if exact else valid if len(valid) == 1 else []
+        candidates = exact
         if not candidates:
+            if len(valid) == 1:
+                raise WeatherLocationNotFound("WeatherAPI.com did not return an exact match for that location. Try the city name or add a region/country.")
             raise WeatherLocationAmbiguous("Several locations match that search. Add the region or country to narrow it down.")
         # Identical display names can still be different places; never pick the
         # first provider result silently.
@@ -268,17 +270,59 @@ class WeatherService:
         return next(iter(unique.values()))
 
     @staticmethod
+    def _parse_state_location_query(query: str) -> Optional[tuple[str, str]]:
+        """Parse `state/place` and `place, state` forms without guessing a city."""
+        raw_parts = [part.strip() for part in query.split("/")] if "/" in query else [part.strip() for part in query.split(",")]
+        if len(raw_parts) != 2 or not all(raw_parts):
+            return None
+        first, second = raw_parts
+        states = [state for state in _STATES if WeatherService._same_state(state["name"], first) or WeatherService._same_state(state["name"], second)]
+        if len(states) != 1:
+            return None
+        state_name = states[0]["name"]
+        place = second if WeatherService._same_state(state_name, first) else first
+        # Accept common slug formatting and the known misspelling in the
+        # reported input, while preserving the user's place rather than
+        # replacing it with WeatherAPI's nearest city result.
+        place = " ".join(part for part in place.replace("-", " ").split() if part)
+        place = " ".join("Bengaluru" if part.casefold() == "benguluru" else part for part in place.split())
+        return place, state_name
+
+    @staticmethod
     async def get_location_weather(location_query: str, language: str = "en") -> WeatherData:
         query = (location_query or "").strip()
         if len(query) < 2:
             raise ValueError("Enter at least two characters to search for a location.")
-        results = await WeatherService._weatherapi_request("search.json", {"q": query})
-        result = WeatherService._resolve_search_result(query, results)
+        structured = WeatherService._parse_state_location_query(query)
+        selected_district = None
+        search_query = query
+        if structured:
+            place, selected_state = structured
+            try:
+                _state, selected_district = WeatherService._canonical_location(place, selected_state)
+            except ValueError:
+                selected_district = None
+            if selected_district is not None:
+                place = selected_district["name"]
+            search_query = f"{place}, {selected_state}, India"
+        results = await WeatherService._weatherapi_request("search.json", {"q": search_query})
+        result = WeatherService._resolve_search_result(search_query, results)
+        if structured and (
+            WeatherService._normalize_name(result["country"]) != "india"
+            or not WeatherService._same_state(result["region"], structured[1])
+        ):
+            raise WeatherLocationNotFound("WeatherAPI.com did not return an exact match in the selected state.")
+        try:
+            location_id = int(result.get("id"))
+            if location_id <= 0:
+                location_id = None
+        except (TypeError, ValueError):
+            location_id = None
         return await WeatherService._fetch_forecast(
             result["lat"], result["lon"], result["name"], result["region"] or result["country"], language,
             "WeatherAPI.com Search API result verified against the requested location",
             expected_country=result["country"], expected_region=result["region"],
-            searched_location_name=result["name"],
+            searched_location_name=result["name"], forecast_location_id=location_id,
         )
 
     @staticmethod
@@ -525,6 +569,7 @@ class WeatherService:
         expected_district: Optional[dict] = None,
         expected_country: Optional[str] = None, expected_region: Optional[str] = None,
         searched_location_name: Optional[str] = None,
+        forecast_location_id: Optional[int] = None,
     ) -> WeatherData:
         lat, lon = WeatherService._valid_coordinates(lat, lon)
         cache_district = district_name.casefold() if district_name else "coordinates"
@@ -542,8 +587,9 @@ class WeatherService:
                 del WeatherService._forecast_cache[cache_key]
 
         api_language = language if language in WeatherService._supported_condition_languages else "en"
+        forecast_query = f"id:{forecast_location_id}" if forecast_location_id else f"{lat},{lon}"
         payload = await WeatherService._weatherapi_request("forecast.json", {
-            "q": f"{lat},{lon}", "days": 3, "aqi": "no", "alerts": "no", "lang": api_language,
+            "q": forecast_query, "days": 3, "aqi": "no", "alerts": "no", "lang": api_language,
         })
         try:
             location = payload.get("location")

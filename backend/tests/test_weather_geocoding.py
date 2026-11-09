@@ -147,7 +147,47 @@ class TestWeatherDirectoryAndWeatherApi(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result.temperature, 29.5)
                 self.assertEqual([url.rsplit("/", 1)[-1] for url, _ in calls], ["search.json", "forecast.json"])
                 self.assertEqual(calls[0][1]["q"], query)
-                self.assertEqual(calls[1][1]["q"], f"{lat},{lon}")
+                self.assertEqual(calls[1][1]["q"], "id:1")
+
+    async def test_bengaluru_south_query_formats_normalize_and_resolve_exact_admin_area(self):
+        for query in ("karnataka/benguluru-south", "Bengaluru South, Karnataka"):
+            with self.subTest(query=query):
+                WeatherService._geocode_cache.clear()
+                WeatherService._forecast_cache.clear()
+                payload = forecast_payload("Bengaluru South", "Karnataka", "India")
+                payload["location"].update({"lat": 12.8, "lon": 77.5})
+                calls = []
+
+                async def get(_client, url, params=None):
+                    calls.append((url, params or {}))
+                    if url.endswith("/search.json"):
+                        return FakeResponse([search_result("Bengaluru South", "Karnataka", "India", 12.8, 77.5)])
+                    return FakeResponse(payload)
+
+                with patch("httpx.AsyncClient.get", new=get):
+                    result = await WeatherService.get_location_weather(query)
+                self.assertEqual((result.district, result.state), ("Bengaluru South", "Karnataka"))
+                self.assertEqual(result.temperature, 29.5)
+                self.assertEqual(calls[0][1]["q"], "Bengaluru South, Karnataka, India")
+                self.assertEqual(calls[1][1]["q"], "id:1")
+
+    async def test_bengaluru_south_never_substitutes_weatherapi_nearby_city(self):
+        cases = [
+            ("karnataka/benguluru-south", "Kadaba", 12.73, 75.47),
+            ("Bengaluru South, Karnataka", "Bengaluru", 12.98, 77.58),
+        ]
+        for query, provider_name, lat, lon in cases:
+            with self.subTest(query=query):
+                WeatherService._geocode_cache.clear()
+
+                async def get(_client, url, params=None):
+                    if url.endswith("/search.json"):
+                        return FakeResponse([search_result(provider_name, "Karnataka", "India", lat, lon)])
+                    raise AssertionError("Forecast must not run for a nonmatching area")
+
+                with patch("httpx.AsyncClient.get", new=get):
+                    with self.assertRaises(WeatherLocationNotFound):
+                        await WeatherService.get_location_weather(query)
 
     async def test_freeform_search_reports_empty_and_ambiguous_locations(self):
         with patch("httpx.AsyncClient.get", new=AsyncMock(return_value=FakeResponse([]))):
