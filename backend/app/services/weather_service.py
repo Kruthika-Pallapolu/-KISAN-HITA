@@ -271,11 +271,25 @@ class WeatherService:
             }) as client:
                 response = await client.get("https://nominatim.openstreetmap.org/search", params=params)
                 if response.status_code != 200:
+                    logger.warning(
+                        "weather_geocode_search_failed district=%r state=%r http_status=%d",
+                        district_name, state_name, response.status_code,
+                    )
                     raise WeatherGeocodingUnavailable(f"District geocoder returned HTTP {response.status_code}.")
                 candidates = response.json()
+                candidate_count = len(candidates) if isinstance(candidates, list) else 0
+                logger.info(
+                    "weather_geocode_search district=%r state=%r http_status=%d candidates=%d",
+                    district_name, state_name, response.status_code, candidate_count,
+                )
         except httpx.TimeoutException:
+            logger.warning("weather_geocode_timeout district=%r state=%r", district_name, state_name)
             raise WeatherGeocodingUnavailable("District geocoding timed out. Live weather is currently unavailable.")
         except httpx.RequestError as exc:
+            logger.warning(
+                "weather_geocode_request_error district=%r state=%r error_type=%s",
+                district_name, state_name, type(exc).__name__,
+            )
             raise WeatherGeocodingUnavailable(f"District geocoding network error ({exc}). Live weather is currently unavailable.")
         except WeatherGeocodingUnavailable:
             raise
@@ -288,36 +302,77 @@ class WeatherService:
         if district_name == "Chhatrapati Sambhajinagar":
             wanted_districts.add("aurangabad")
 
-        for item in candidates if isinstance(candidates, list) else []:
+        administrative_fields = (
+            "state_district", "district", "county", "municipality", "city_district", "locality"
+        )
+        for index, item in enumerate(candidates if isinstance(candidates, list) else []):
             address = item.get("address") or {}
+            administrative_address = {
+                field: str(address[field])[:100]
+                for field in ("state", *administrative_fields)
+                if address.get(field)
+            }
+            logger.info(
+                "weather_geocode_candidate district=%r state=%r index=%d name=%r category=%r type=%r country=%r administrative_address=%s",
+                district_name,
+                state_name,
+                index,
+                str(item.get("name") or "")[:120],
+                item.get("category", item.get("class", "")),
+                item.get("type", ""),
+                address.get("country_code", ""),
+                json.dumps(administrative_address, ensure_ascii=False, separators=(",", ":")),
+            )
+
             if str(address.get("country_code", "")).casefold() != "in":
+                logger.info(
+                    "weather_geocode_candidate_rejected district=%r state=%r index=%d reason=country_mismatch",
+                    district_name, state_name, index,
+                )
                 continue
             actual_state = str(address.get("state") or "")
             if not actual_state or not WeatherService._same_state(actual_state, state_name):
+                logger.info(
+                    "weather_geocode_candidate_rejected district=%r state=%r index=%d reason=state_mismatch",
+                    district_name, state_name, index,
+                )
                 continue
-
-            administrative_names = [address.get(field) for field in (
-                "state_district", "district", "county", "municipality", "city_district", "locality"
-            )]
 
             category = item.get("category", item.get("class", ""))
             item_type = item.get("type", "")
             if category != "boundary" or item_type != "administrative":
+                logger.info(
+                    "weather_geocode_candidate_rejected district=%r state=%r index=%d reason=boundary_type_mismatch",
+                    district_name, state_name, index,
+                )
                 continue
 
+            administrative_names = [address.get(field) for field in administrative_fields]
             administrative_names.append(item.get("name"))
             result_names = {
                 WeatherService._normalize_name(str(value))
                 for value in administrative_names if value
             }
             if not result_names.intersection(wanted_districts):
+                logger.info(
+                    "weather_geocode_candidate_rejected district=%r state=%r index=%d reason=district_name_mismatch",
+                    district_name, state_name, index,
+                )
                 continue
 
             try:
                 lat, lon = float(item["lat"]), float(item["lon"])
             except (KeyError, TypeError, ValueError):
+                logger.info(
+                    "weather_geocode_candidate_rejected district=%r state=%r index=%d reason=invalid_coordinates",
+                    district_name, state_name, index,
+                )
                 continue
             if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                logger.info(
+                    "weather_geocode_candidate_rejected district=%r state=%r index=%d reason=invalid_coordinates",
+                    district_name, state_name, index,
+                )
                 continue
 
             # Prefer the district-level boundary over nested county/local boundaries.
@@ -329,9 +384,17 @@ class WeatherService:
                 ))
             )
 
+            logger.info(
+                "weather_geocode_candidate_accepted district=%r state=%r index=%d district_level=%s",
+                district_name, state_name, index, is_district_level,
+            )
             matches.append((lat, lon, district_name, state_name, is_district_level))
 
         preferred = [item for item in matches if item[4]]
+        logger.info(
+            "weather_geocode_candidates_filtered district=%r state=%r matching=%d preferred_district_level=%d",
+            district_name, state_name, len(matches), len(preferred),
+        )
         if preferred:
             matches = preferred
 
@@ -346,7 +409,15 @@ class WeatherService:
 
         if len(unique) != 1:
             if unique:
+                logger.warning(
+                    "weather_geocode_ambiguous district=%r state=%r unique_matches=%d",
+                    district_name, state_name, len(unique),
+                )
                 raise ValueError(f"District '{district}' is ambiguous in {state or 'India'}. Select a state and district that match.")
+            logger.warning(
+                "weather_geocode_unverified district=%r state=%r candidates=%d matching=0 preferred_district_level=%d",
+                district_name, state_name, candidate_count, len(preferred),
+            )
             raise WeatherCoverageUnavailable(f"Weather coverage is currently unavailable for {district_name}, {state_name}; its location could not be verified.")
 
         lat, lon, resolved_district, resolved_state = next(iter(unique.values()))[:4]
