@@ -1,0 +1,75 @@
+# Local credentials and configuration; keep only secret-free templates
+.env
+.env.*
+!.env.example
+!**/.env.example
+secrets/
+**/secrets/
+*.secret
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Dependencies and Python environments
+node_modules/
+**/node_modules/
+.venv/
+**/.venv/
+venv/
+**/venv/
+env/
+**/env/
+ENV/
+
+# Databases and local data
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.dump
+*.sql.gz
+
+# Generated builds and caches
+dist/
+**/dist/
+build/
+**/build/
+dist-ssr/
+.vite/
+**/.vite/
+.pytest_cache/
+**/.pytest_cache/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.tsbuildinfo
+.coverage
+htmlcov/
+.cache/
+coverage/
+
+# Logs, temporary files, backups, and review exports
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.swp
+*.swo
+*.bak
+*.backup
+*.tts-backup
+*.zip
+
+# Older duplicate frontend and extracted reference media (source HTML is kept)
+/frontend 2/
+/reference/frames_v1/
+/reference/frames_v2/
+/reference/videos/
+
+# Operating system metadata
+.DS_Store
+**/.DS_Store
+Thumbs.db
