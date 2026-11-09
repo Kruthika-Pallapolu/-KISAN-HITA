@@ -6,7 +6,7 @@ import { AssistantHttpError, AssistantResponseError, requestAssistantReply } fro
 test('voice chat uses the real assistant endpoint contract and accepts its actual response shape', async () => {
   let observed;
   const payload = {
-    message: 'What is the weather tomorrow?',
+    message: 'How can I improve soil health before sowing?',
     conversation_id: 'conv_voice_test',
     language: 'en',
     farm_context: { district: 'Nellore', state: 'Andhra Pradesh' },
@@ -14,17 +14,17 @@ test('voice chat uses the real assistant endpoint contract and accepts its actua
   const result = await requestAssistantReply(payload, async (url, options) => {
     observed = { url, options };
     return new Response(JSON.stringify({
-      reply_text: 'I need your district to check a forecast.',
+      reply_text: 'Start with a soil test and follow its nutrient guidance.',
       conversation_id: 'conv_voice_test',
-      intent: 'weather',
-      routed_feature: 'weather',
+      intent: 'general',
+      routed_feature: 'ask_kisan',
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   });
   assert.equal(observed.url, '/api/assistant/chat');
   assert.equal(observed.options.method, 'POST');
   assert.equal(observed.options.credentials, 'same-origin');
   assert.deepEqual(JSON.parse(observed.options.body), payload);
-  assert.equal(result.reply_text, 'I need your district to check a forecast.');
+  assert.equal(result.reply_text, 'Start with a soil test and follow its nutrient guidance.');
 });
 
 test('HTTP failures and empty or malformed assistant replies become explicit errors', async () => {

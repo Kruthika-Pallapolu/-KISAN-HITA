@@ -99,7 +99,7 @@ function withBrowserMocks({ position, geoError, address, fetchError } = {}, run)
   });
 }
 
-test('live location selects an exact Indian state and district and returns coordinates for the weather request', async () => {
+test('live location selects an exact Indian state and district and returns coordinates for the selected location request', async () => {
   await withBrowserMocks({
     address: { country_code: 'in', state: 'Andhra Pradesh', state_district: 'Nellore District' },
   }, async () => {
@@ -174,10 +174,10 @@ test('language changes affect only location labels, not canonical state/district
   assert.equal(isDistrictInState(requestBefore.district, requestBefore.state), true);
 });
 
-test('Weather, Market Prices and shared location selectors use the same display helper', () => {
+test('Market Prices and shared location selectors use the same display helper', () => {
   const here = dirname(fileURLToPath(import.meta.url));
   const root = resolve(here, '..');
-  for (const file of ['pages/WeatherPage.tsx', 'pages/MarketPricesPage.tsx', 'components/FarmLocationFields.tsx']) {
+  for (const file of ['pages/MarketPricesPage.tsx', 'components/FarmLocationFields.tsx']) {
     const source = readFileSync(resolve(root, file), 'utf8');
     assert.match(source, /localizeLocation/, `${file} must use shared location localization`);
   }

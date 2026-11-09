@@ -27,5 +27,12 @@ test('integrated background is muted, scroll-scrubbed, and uses both exact local
   assert.match(component, /muted/);
   assert.match(component, /video\.currentTime\s*=\s*seconds/);
   assert.match(component, /prefers-reduced-motion:\s*reduce/);
+  assert.match(component, /easeScrollProgress\(current, target, mobile, reducedMotion\)/);
+  assert.match(component, /if \(video\.seeking\) \{\s*scheduleFrame\(\);/);
+  assert.match(component, /video\.pause\(\)/);
+  assert.doesNotMatch(component, /video\.play\(/);
+  assert.doesNotMatch(component, /reducedMotion\) video\.style\.visibility = 'hidden'/);
   assert.match(component, /removeEventListener\('scroll'/);
+  const css = readFileSync(new URL('../index.css', import.meta.url), 'utf8');
+  assert.doesNotMatch(css, /prefers-reduced-motion:\s*reduce\)\s*\{\s*\.scroll-scrub-background__video\s*\{\s*visibility:\s*hidden/);
 });

@@ -51,13 +51,20 @@ export const ScrollScrubBackground: React.FC = () => {
         footerOpacity = (intro ? 0.34 : 0) + (0.72 - (intro ? 0.34 : 0)) * progress;
       }
       veil.style.opacity = String(Math.max(introOpacity, footerOpacity));
-      if (duration > 0 && !reducedMotion) scheduleFrame();
+      if (duration > 0) scheduleFrame();
     };
 
     const tick = () => {
       frameHandle = 0;
-      if (!active || reducedMotion || seekFailed || duration <= 0 || video.seeking) return;
-      current = easeScrollProgress(current, target, mobile, false);
+      if (!active || seekFailed || duration <= 0) return;
+      // Keep servicing the scroll target while the decoder completes a seek.
+      // Some mobile decoders can delay or omit `seeked`; the original artifact
+      // used a single RAF loop and did not depend on that event to recover.
+      if (video.seeking) {
+        scheduleFrame();
+        return;
+      }
+      current = easeScrollProgress(current, target, mobile, reducedMotion);
       if (Math.abs(target - current) < 0.0005) current = target;
       const seconds = getVideoTime(current, duration);
       if (shouldSeekFrame(seconds, lastSeek, mobile)) {
@@ -70,7 +77,7 @@ export const ScrollScrubBackground: React.FC = () => {
           video.style.visibility = 'hidden';
         }
       }
-      if (Math.abs(target - current) >= 0.0005) scheduleFrame();
+      if (video.seeking || Math.abs(target - current) >= 0.0005) scheduleFrame();
     };
 
     function scheduleFrame() {
@@ -81,7 +88,7 @@ export const ScrollScrubBackground: React.FC = () => {
       duration = Number.isFinite(video.duration) ? video.duration : 0;
       video.pause();
       current = target;
-      if (duration > 0 && !reducedMotion) {
+      if (duration > 0) {
         try {
           video.currentTime = getVideoTime(current, duration);
           lastSeek = video.currentTime;
@@ -103,7 +110,6 @@ export const ScrollScrubBackground: React.FC = () => {
     video.addEventListener('loadedmetadata', onMetadata);
     video.addEventListener('error', onVideoError);
     video.addEventListener('seeked', onSeeked);
-    if (reducedMotion) video.style.visibility = 'hidden';
     window.addEventListener('scroll', measure, { passive: true });
     window.addEventListener('resize', measure, { passive: true });
     const resizeObserver = typeof ResizeObserver !== 'undefined'
@@ -111,7 +117,7 @@ export const ScrollScrubBackground: React.FC = () => {
       : null;
     resizeObserver?.observe(document.documentElement);
     measure();
-    if (!reducedMotion) video.load();
+    video.load();
 
     return () => {
       active = false;

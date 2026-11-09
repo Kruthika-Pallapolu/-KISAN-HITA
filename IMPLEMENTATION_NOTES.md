@@ -12,7 +12,7 @@
 - Added SDK-level Gemini HTTP timeout configuration.
 - Withheld hard-coded market prices because the package did not contain traceable original bulletin IDs or URLs.
 - Withheld static crop recommendations because the cited regional source documents were not included or traceable.
-- Weather now rejects district/state mismatches and missing/invalid provider measurements instead of substituting made-up values. Spray guidance now requires checking hourly forecasts and product labels.
+- The Weather feature has since been removed from the application, including its routes, providers, page, and navigation. The assistant explicitly declines local forecast requests rather than estimating.
 - Voice input now uses one browser transcription engine instead of running browser STT and a second MediaRecorder upload in parallel. Unsupported browsers receive a real error rather than a simulated transcript.
 - Updated deployment guidance and added focused session-isolation regression tests.
 - Gnani remains disabled; no Gnani API calls or activation were made.

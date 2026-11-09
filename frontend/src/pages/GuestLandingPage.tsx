@@ -1,7 +1,7 @@
 import React from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import type { SupportedLanguage } from '../i18n/translations';
-import { CloudSun, Sprout, ShieldAlert, TrendingUp, LogIn } from 'lucide-react';
+import { Sprout, ShieldAlert, TrendingUp, LogIn } from 'lucide-react';
 
 const GUEST_COPY: Record<SupportedLanguage, { eyebrow: string; title: string; intro: string; limit: string; requires: string; signIn: string; languageLabel: string }> = {
   en: { eyebrow: 'A first look', title: 'Welcome to Kisan Hita', intro: 'Explore the farming tools available in Kisan Hita before creating an account.', limit: 'These tools need a signed-in account to securely save your farm profile and request results. This preview does not send data or create a guest session.', requires: 'Sign in required', signIn: 'Sign in or create an account', languageLabel: 'Language' },
@@ -17,7 +17,6 @@ export const GuestLandingPage: React.FC<{ onSignIn: () => void }> = ({ onSignIn 
   const { language, setLanguageLocally, languages, t } = useLanguage();
   const copy = GUEST_COPY[language];
   const tools = [
-    { icon: CloudSun, title: t('weatherTitle'), description: t('weatherSub') },
     { icon: Sprout, title: t('cropAdvisorTitle'), description: t('cropAdvisorSub') },
     { icon: ShieldAlert, title: t('cropHealthTitle'), description: t('cropHealthSub') },
     { icon: TrendingUp, title: t('marketTitle'), description: t('marketSub') },

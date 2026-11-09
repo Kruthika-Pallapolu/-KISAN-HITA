@@ -4,8 +4,8 @@ import base64
 import os
 import sys
 import tempfile
-from unittest.mock import patch, AsyncMock
 import speech_recognition as sr
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 from auth_helpers import authenticated_client
 
@@ -18,38 +18,9 @@ from app.database import init_db
 from app.services.gnani_voice import generate_mock_wav
 from app.services.market_service import MarketPriceService
 
-class MockHttpxResponse:
-    def __init__(self, status_code, json_data):
-        self.status_code = status_code
-        self._json_data = json_data
-
-    def json(self):
-        return self._json_data
-
-async def mock_weather_http_get(_client, url, params=None):
-    params = params or {}
-    if url.endswith("/search.json"):
-        district, _, rest = params.get("q", "").partition(",")
-        state = rest.split(",")[0].strip()
-        return MockHttpxResponse(200, [{"name": district.strip(), "region": state, "country": "India", "lat": 17.96, "lon": 79.59, "id": 1}])
-    return MockHttpxResponse(200, WEATHERAPI_MOCK_DATA)
-
-WEATHERAPI_MOCK_DATA = {
-    "location": {"name": "Warangal", "region": "Telangana", "country": "India", "lat": 17.96, "lon": 79.59},
-    "current": {"temp_c": 29.5, "feelslike_c": 31.0, "humidity": 65, "wind_kph": 12.0,
-                "wind_dir": "SW", "vis_km": 10.0, "precip_mm": 0.0,
-                "condition": {"text": "Partly cloudy", "code": 1003, "icon": "//cdn.weatherapi.com/weather/64x64/day/116.png"}},
-    "forecast": {"forecastday": [
-        {"date": "2026-11-09", "day": {"maxtemp_c": 31.0, "mintemp_c": 22.0, "daily_chance_of_rain": 15, "condition": {"text": "Partly cloudy", "code": 1003, "icon": "//cdn.weatherapi.com/weather/64x64/day/116.png"}}},
-        {"date": "2026-11-10", "day": {"maxtemp_c": 32.0, "mintemp_c": 21.5, "daily_chance_of_rain": 20, "condition": {"text": "Cloudy", "code": 1006, "icon": "//cdn.weatherapi.com/weather/64x64/day/119.png"}}},
-        {"date": "2026-11-11", "day": {"maxtemp_c": 31.5, "mintemp_c": 22.0, "daily_chance_of_rain": 25, "condition": {"text": "Rain", "code": 1183, "icon": "//cdn.weatherapi.com/weather/64x64/day/296.png"}}},
-    ]},
-}
-
 class TestKisanHitaE2EJourneys(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        settings.WEATHERAPI_KEY = "offline-test-key"
         cls.previous_db_path = settings.DATABASE_PATH
         cls.test_db_dir = tempfile.TemporaryDirectory()
         settings.DATABASE_PATH = os.path.join(cls.test_db_dir.name, "e2e.sqlite")
@@ -69,33 +40,6 @@ class TestKisanHitaE2EJourneys(unittest.TestCase):
         self.assertEqual(data["status"], "healthy")
         self.assertEqual(data["app"], "Kisan Hita")
         self.assertFalse(data["gnani_live_enabled"])
-
-    def test_journey_1_telugu_farmer_weather_query(self):
-        """
-        Farmer selects Telugu and asks about rain in Warangal.
-        The assistant understands the Telugu query, routes to weather module,
-        retrieves forecast, and explains result in Telugu in the conversation.
-        """
-        payload = {
-            "message": "రేపు మా పొలంలో వర్షం పడుతుందా?",
-            "conversation_id": "telugu_conv_1",
-            "language": "te",
-            "farm_context": {
-                "district": "Warangal",
-                "state": "Telangana"
-            }
-        }
-        with patch("httpx.AsyncClient.get", new=mock_weather_http_get):
-            res = self.client.post("/api/assistant/chat", json=payload)
-            self.assertEqual(res.status_code, 200)
-            data = res.json()
-            
-            self.assertEqual(data["language"], "te")
-            self.assertEqual(data["intent"], "weather")
-            self.assertEqual(data["routed_feature"], "weather")
-            self.assertIsNotNone(data["feature_data"])
-            self.assertIn("Warangal", data["reply_text"])
-            self.assertIn("వర్షం", data["reply_text"])
 
     def test_journey_2_crop_advisor_black_soil_kharif(self):
         """

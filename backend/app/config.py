@@ -64,12 +64,8 @@ class Settings(BaseModel):
     # Optional server-side official market feed credential. Never sent to the frontend.
 
     # Deterministic demo mode is used by explicitly demo-backed features such
-    # as market prices. Weather always requires the live WeatherAPI provider.
+    # as market prices.
     DEMO_DATA_ENABLED: bool = os.getenv("DEMO_DATA_ENABLED", "true").lower() == "true"
-    
-    # WeatherAPI.com credentials stay server-side under one canonical name.
-    WEATHERAPI_KEY: str = os.getenv("WEATHERAPI_KEY", "")
-    WEATHER_TIMEOUT_SECONDS: float = float(os.getenv("WEATHER_TIMEOUT_SECONDS", "6.0"))
     
     # Supported languages: Telugu, English, Hindi, Tamil, Kannada, Malayalam, Marathi
     SUPPORTED_LANGUAGES: list[str] = ["te", "en", "hi", "ta", "kn", "ml", "mr"]

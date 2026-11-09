@@ -166,7 +166,7 @@ class TestVoiceModule(unittest.TestCase):
         for lang in ["ml", "mr"]:
             res = self.client.post("/api/voice/tts", json={"text": "నమస్కారం రైతు సోదరులకు", "language": lang})
             self.assertEqual(res.status_code, 503)
-            self.assertIn("No verified local system voice", res.json()["detail"])
+            self.assertIn("No verified local voice is configured", res.json()["detail"])
 
     def test_live_gnani_calls_blocked_when_disabled(self):
         """CRITICAL: Verifies live Gnani API calls raise an error when GNANI_LIVE_ENABLED=false."""
@@ -183,8 +183,8 @@ class TestVoiceModule(unittest.TestCase):
             with self.assertRaises(RuntimeError) as ctx2:
                 loop.run_until_complete(live_provider.text_to_speech("test", "en"))
             self.assertEqual(client.call_count, 0)
-        self.assertIn("Gnani integration is dormant during development to protect credits", str(ctx1.exception))
-        self.assertIn("Gnani integration is dormant during development to protect credits", str(ctx2.exception))
+        self.assertIn("Gnani live integration is disabled", str(ctx1.exception))
+        self.assertIn("Gnani live integration is disabled", str(ctx2.exception))
         
         loop.close()
 
@@ -204,7 +204,7 @@ class TestVoiceModule(unittest.TestCase):
             
             with self.assertRaises(RuntimeError) as ctx:
                 loop.run_until_complete(live_provider.speech_to_text(self.valid_wav, "en"))
-            self.assertIn("Gnani API Key is missing", str(ctx.exception))
+            self.assertIn("Gnani API key is missing", str(ctx.exception))
             
             loop.close()
         finally:

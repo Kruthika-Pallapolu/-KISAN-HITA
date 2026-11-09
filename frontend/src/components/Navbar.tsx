@@ -3,7 +3,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { useFarmProfile } from '../context/FarmProfileContext';
 import { KISAN_HITA_NAME } from '../services/productIdentity';
 import { useAssistant } from '../context/AssistantContext';
-import { Bot, CloudSun, Sprout, ShieldAlert, TrendingUp, Settings, Globe, Menu, X } from 'lucide-react';
+import { Bot, Sprout, ShieldAlert, TrendingUp, Settings, Globe, Menu, X } from 'lucide-react';
 
 interface NavbarProps {
   currentTab: string;
@@ -20,7 +20,6 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, onSelectTab }) => {
 
   const navItems = [
     { id: 'home', label: t('navHome'), icon: null },
-    { id: 'weather', label: t('navWeather'), icon: <CloudSun size={17} /> },
     { id: 'choose-crop', label: t('navChooseCrop'), icon: <Sprout size={17} /> },
     { id: 'check-crop', label: t('navCheckCrop'), icon: <ShieldAlert size={17} /> },
     { id: 'market-prices', label: t('navMarketPrices'), icon: <TrendingUp size={17} /> },

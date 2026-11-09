@@ -31,12 +31,11 @@ const WELCOME_CONTENT: Record<string, WelcomeContent> = {
   en: {
     title: 'Namaste! Welcome to Kisan Hita 🙏',
     subtitle: 'Your voice-first digital agricultural companion.',
-    body: 'Ask about local weather, demo/reference crop options, plant-health precautions, and market price samples clearly marked DEMO.',
+    body: 'Ask about demo/reference crop options, plant-health precautions, and market price samples clearly marked DEMO.',
     voiceNote: 'Typing is always available. Use the microphone when your browser supports speech recognition; language support varies by device.',
     startBtn: 'Start Voice Conversation',
     exploreBtn: 'Explore Agricultural Services',
     features: [
-      'Agro-weather forecasts & spray suitability',
       'Demo/reference crop options — verify locally before planting',
       'Safety-first plant health & cultural practices',
       'DEMO market prices — not live or official mandi rates',

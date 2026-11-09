@@ -126,8 +126,6 @@ class TestProductionHardening(unittest.TestCase):
         self.assertIsNone(res.source_url)
 
 
-    def test_get_weather_and_market_reject_unsupported_language(self):
-        weather = self.client.get("/api/weather/current?district=Warangal&state=Telangana&language=te-XX")
+    def test_market_rejects_unsupported_language(self):
         market = self.client.get("/api/market-prices/search?commodity=Chilli&language=fr")
-        self.assertEqual(weather.status_code, 422)
         self.assertEqual(market.status_code, 422)

@@ -9,7 +9,6 @@ from ..database import (
     save_conversation_session,
     clear_conversation_session,
 )
-from .weather_service import WeatherService
 from .crop_service import CropAdvisorService
 from .crop_health_service import CropHealthService
 from .market_service import MarketPriceService
@@ -50,7 +49,7 @@ def _localized_unavailable_reply(language: str) -> str:
         "kn": "ಕ್ಷಮಿಸಿ, ಈ ಪ್ರಶ್ನೆಗೆ ಈಗ ವಿಶ್ವಾಸಾರ್ಹ ಉತ್ತರ ನೀಡಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ. ಸ್ವಲ್ಪ ಸಮಯದ ನಂತರ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ ಅಥವಾ ಹವಾಮಾನ, ಬೆಳೆ ಆಯ್ಕೆ, ಬೆಳೆ ಆರೋಗ್ಯ, ಮಾರುಕಟ್ಟೆ ದರಗಳ ಬಗ್ಗೆ ಕೇಳಿ.",
         "ml": "ക്ഷമിക്കണം, ഈ ചോദ്യത്തിന് ഇപ്പോൾ വിശ്വസനീയമായ മറുപടി നൽകാനായില്ല. കുറച്ച് കഴിഞ്ഞ് വീണ്ടും ശ്രമിക്കൂ, അല്ലെങ്കിൽ കാലാവസ്ഥ, വിള തിരഞ്ഞെടുപ്പ്, വിള ആരോഗ്യം, വിപണി വില എന്നിവ ചോദിക്കൂ.",
         "mr": "क्षमस्व, या प्रश्नाचे विश्वासार्ह उत्तर आत्ता देता आले नाही. थोड्या वेळाने पुन्हा प्रयत्न करा किंवा हवामान, पीक निवड, पीक आरोग्य आणि बाजारभाव विचारा.",
-        "en": "I couldn't generate a reliable answer to that question just now. Please try again shortly, or ask about weather, crop options, crop health, or market prices.",
+        "en": "I couldn't generate a reliable answer to that question just now. Please try again shortly, or ask about crop options, crop health, or market prices.",
     }
     return replies.get((language or "en")[:2].lower(), replies["en"])
 
@@ -155,22 +154,37 @@ def _cotton_pest_education_fallback(language: str) -> str:
     return COTTON_PEST_EDUCATION.get((language or "en")[:2].lower(), COTTON_PEST_EDUCATION["en"])
 
 # Multilingual keywords and intent patterns across 7 languages
-WEATHER_KEYWORDS = [
-    # English
-    "weather", "rain", "rainfall", "temperature", "cloud", "storm", "forecast", "irrigate", "irrigation", "water field", "spray", "wind",
-    # Telugu
-    "వాతావరణం", "వర్షం", "వాన", "నీరు", "తడి", "ఎండ", "మంచు", "గాలి", "మందు పిచికారీ",
-    # Hindi
-    "मौसम", "बारिश", "बरसात", "तापमान", "सिंचाई", "पानी देना", "छिड़काव", "हवा",
-    # Tamil
-    "வானிலை", "மழை", "வெப்பநிலை", "பாசனம்", "தண்ணீர்", "தெளிப்பான்", "காற்று",
-    # Kannada
-    "ಹವಾಮಾನ", "ಮಳೆ", "ತಾಪಮಾನ", "ನೀರಾವರಿ", "ನೀರು", "ಸಿಂಪಡಣೆ", "ಗಾಳಿ",
-    # Malayalam
-    "കാലാവസ്ഥ", "മഴ", "താപനില", "നനയ്ക്കൽ", "കാറ്റ്",
-    # Marathi
-    "हवामान", "पाऊस", "तापमान", "सिंचन", "फवारणी", "वारा"
+UNSUPPORTED_FORECAST_KEYWORDS = [
+    "weather", "rain", "rainfall", "temperature", "forecast", "will it rain", "weather tomorrow",
+    "వాతావరణం", "వర్షం", "వాన", "రేపు వర్షం", "మంచు",
+    "मौसम", "बारिश", "बरसात", "तापमान", "कल बारिश",
+    "வானிலை", "மழை", "வெப்பநிலை", "நாளை மழை",
+    "ಹವಾಮಾನ", "ಮಳೆ", "ತಾಪಮಾನ", "ನಾಳೆ ಮಳೆ",
+    "കാലാവസ്ഥ", "മഴ", "താപനില", "നാളെ മഴ",
+    "हवामान", "पाऊस", "तापमान", "उद्या पाऊस",
 ]
+
+
+def is_unsupported_forecast_request(text: str) -> bool:
+    lower = (text or "").casefold()
+    for keyword in UNSUPPORTED_FORECAST_KEYWORDS:
+        if keyword.isascii():
+            if re.search(rf"(?<![a-z]){re.escape(keyword)}(?![a-z])", lower):
+                return True
+        elif keyword in lower:
+            return True
+    return False
+
+
+UNSUPPORTED_FORECAST_REPLIES = {
+    "te": "క్షమించండి, కిసాన్ హితా స్థానిక ప్రత్యక్ష సూచనను పొందలదు. పంట ఎంపిక, పంట ఆరోగ్యం లేదా మార్కెట్ ధరల గురించి నేను సహాయం చేయగలను.",
+    "en": "Sorry, Kisan Hita cannot retrieve a reliable local forecast. I can help with crop choice, crop health, or market reference prices instead.",
+    "hi": "क्षमा करें, किसान हित स्थानीय पूर्वानुमान प्राप्त नहीं कर सकता। मैं फसल चयन, फसल स्वास्थ्य या बाजार संदर्भ भाव में मदद कर सकता हूँ।",
+    "ta": "மன்னிக்கவும், கிசான் ஹிதா உள்ளூர் முன்னறிவிப்பைப் பெற முடியாது. பயிர் தேர்வு, பயிர் நலம் அல்லது சந்தை குறிப்புவிலைகளில் உதவலாம்.",
+    "kn": "ಕ್ಷಮಿಸಿ, ಕಿಸಾನ್ ಹಿತಾ ಸ್ಥಳೀಯ ಮುನ್ಸೂಚನೆಯನ್ನು ಪಡೆಯಲು ಸಾಧ್ಯವಿಲ್ಲ. ಬೆಳೆ ಆಯ್ಕೆ, ಬೆಳೆ ಆರೋಗ್ಯ ಅಥವಾ ಮಾರುಕಟ್ಟೆ ಉಲ್ಲೇಖ ದರಗಳಲ್ಲಿ ಸಹಾಯ ಮಾಡಬಹುದು.",
+    "ml": "ക്ഷമിക്കണം, കിസാൻ ഹിതയ്ക്ക് പ്രാദേശിക പ്രവചനം ലഭ്യമാക്കാനാവില്ല. വിള തിരഞ്ഞെടുപ്പ്, വിളയുടെ ആരോഗ്യം, വിപണി സൂചനാ വിലകൾ എന്നിവയിൽ സഹായിക്കാം.",
+    "mr": "क्षमस्व, किसान हित स्थानिक अंदाज मिळवू शकत नाही. पीक निवड, पीक आरोग्य किंवा बाजार संदर्भभावाबद्दल मदत करू शकतो.",
+}
 
 # Explicit crop selection / recommendation phrases (bare 'crop' removed to avoid false triggers)
 CROP_ADVISOR_KEYWORDS = [
@@ -337,7 +351,7 @@ def detect_intent(text: str) -> str:
             return "general"
 
     # Suitability language wins over terms such as irrigation that also occur
-    # in weather questions. Keep this after harvest/practice checks above.
+    # in general water-management questions. Keep this after practice checks.
     for phrase in CROP_ADVISOR_KEYWORDS:
         if phrase in lower:
             return "crop_advisor"
@@ -356,11 +370,6 @@ def detect_intent(text: str) -> str:
     for kw in MARKET_PRICE_KEYWORDS:
         if kw in lower:
             return "market_prices"
-
-    # 4. Weather
-    for kw in WEATHER_KEYWORDS:
-        if kw in lower:
-            return "weather"
 
     # 5. Crop Advisor multi-word selection phrases
     for phrase in CROP_ADVISOR_KEYWORDS:
@@ -559,17 +568,6 @@ def extract_health_crop(text: str) -> Optional[str]:
 # ----------------- LOCALIZED SEQUENTIAL SLOT PROMPTS -----------------
 
 SLOT_PROMPTS = {
-    "weather": {
-        "district": {
-            "te": "వాతావరణ సూచన కోసం మీ జిల్లా ఏది? (ఉదాహరణకు: వరంగల్, ఖమ్మం, కరీంనగర్)",
-            "hi": "मौसम पूर्वानुमान के लिए आपका जिला कौन सा है? (जैसे: वारंगल, खम्मम, करीमनगर)",
-            "ta": "வானிலை முன்னறிவிப்புக்கு உங்கள் மாவட்டம் எது? (எ.கா: வாரங்கல், கம்மம்)",
-            "kn": "ಹವಾಮಾನ ಮುನ್ಸೂಚನೆಗಾಗಿ ನಿಮ್ಮ ಜಿಲ್ಲೆ ಯಾವುದು? (ಉದಾ: ವಾರಂಗಲ್, ಖಮ್ಮಂ)",
-            "ml": "കാലാവസ്ഥാ പ്രവചനത്തിനായി നിങ്ങളുടെ ജില്ല ഏതാണ്? (ഉദാ: വാറങ്കൽ, ഖമ്മം)",
-            "mr": "हवामान अंदाजासाठी आपला जिल्हा कोणता आहे? (उदा: वारंगळ, खम्मम)",
-            "en": "Which district's weather forecast would you like to check? (e.g. Warangal, Khammam, Karimnagar)",
-        }
-    },
     "market_prices": {
         "commodity": {
             "te": "మీరు ఏ పంట లేదా సరుకు మార్కెట్ ధర తెలుసుకోవాలనుకుంటున్నారు? (ఉదాహరణకు: మిర్చి, పత్తి, టమాటా, ధాన్యం)",
@@ -883,10 +881,23 @@ class AssistantOrchestrator:
                 intent="general",
                 routed_feature=None,
                 feature_data=None,
-                suggested_actions=["Will it rain tomorrow?", "Which crop suits black soil?", "Check chilli price"],
+                suggested_actions=["Which crop suits black soil?", "Check chilli price"],
                 audio_available=False,
                 pending_workflow=None,
                 collected_slots={}
+            )
+
+        if is_unsupported_forecast_request(message):
+            return ChatResponse(
+                conversation_id=conversation_id,
+                reply_text=UNSUPPORTED_FORECAST_REPLIES.get(language, UNSUPPORTED_FORECAST_REPLIES["en"]),
+                language=language,
+                intent="general",
+                routed_feature="ask_kisan",
+                feature_data=None,
+                suggested_actions=["Which crop suits black soil?", "Check Chilli mandi prices"],
+                audio_available=False,
+                pending_workflow=None,
             )
 
         # 2. Check existing conversation session
@@ -894,6 +905,12 @@ class AssistantOrchestrator:
         session_workflow = session.get("pending_workflow")
         collected_slots = session.get("collected_slots") or {}
         missing_slots = session.get("missing_slots") or []
+        # Discard pending slot state from the retired forecast workflow.
+        if session_workflow == "weather":
+            clear_conversation_session(conversation_id)
+            session_workflow = None
+            collected_slots = {}
+            missing_slots = []
 
         # A complete new market query is a new search, even if a previous
         # interrupted market flow is waiting for its commodity. Reset stale
@@ -936,13 +953,7 @@ class AssistantOrchestrator:
             current_missing = missing_slots[0]
 
             # Try to extract the requested slot from the user's message
-            if session_workflow == "weather":
-                if current_missing == "district":
-                    dist = extract_district(message) or message.strip().title()
-                    collected_slots["district"] = dist
-                    missing_slots.pop(0)
-
-            elif session_workflow == "market_prices":
+            if session_workflow == "market_prices":
                 if current_missing == "commodity":
                     comm = extract_commodity(message) or message.strip().title()
                     collected_slots["commodity"] = comm
@@ -1007,7 +1018,7 @@ class AssistantOrchestrator:
                 # Fall through to execution with collected_slots populated below.
                 active_intent = session_workflow
         else:
-            # Detect new intent (if image attached and not explicitly weather/market, treat as crop_health)
+            # Detect new intent (if an image is attached, treat it as crop health unless it is a market query)
             detected = detect_intent(message)
             if image_base64 and detected in ["general", "crop_health"]:
                 active_intent = "crop_health"
@@ -1016,175 +1027,8 @@ class AssistantOrchestrator:
 
         # ----------------- B. EXECUTE OR INITIATE INTENT -----------------
 
-        # 1. WEATHER INTENT
-        if active_intent == "weather":
-            # Extract district if mentioned in message, or collected, or in profile
-            mentioned_dist = extract_district(message)
-            collected_dist = collected_slots.get("district")
-            raw_p_dist = farm_ctx.get("district")
-            profile_dist = raw_p_dist.strip() if raw_p_dist and raw_p_dist.strip() not in ["", "Warangal (Default)", "Default", "None"] else None
-            target_district = collected_dist or mentioned_dist or profile_dist
-
-            # If location is missing from all sources, ask sequentially
-            if not target_district:
-                missing = ["district"]
-                save_conversation_session(conversation_id, "weather", {}, missing)
-                prompt = get_slot_prompt("weather", "district", language)
-                return ChatResponse(
-                    conversation_id=conversation_id,
-                    reply_text=prompt,
-                    language=language,
-                    intent="weather",
-                    routed_feature="weather",
-                    pending_workflow="weather",
-                    collected_slots={},
-                    next_slot="district",
-                    suggested_actions=["Warangal", "Khammam", "Karimnagar", "Guntur"],
-                    audio_available=False
-                )
-
-            try:
-                w_data = await WeatherService.get_district_weather(target_district, default_state, language)
-            except (ValueError, RuntimeError) as exc:
-                clear_conversation_session(conversation_id)
-                fail_replies = {
-                    "te": f"క్షమించండి, {target_district} కొరకు ప్రత్యక్ష వాతావరణ సమాచారం ప్రస్తుతం అందుబాటులో లేదు. దయచేసి కాసేపటి తర్వాత మళ్ళీ ప్రయత్నించండి.",
-                    "hi": f"क्षमा करें, {target_district} के लिए लाइव मौसम डेटा इस समय उपलब्ध नहीं है। कृपया थोड़ी देर बाद पुनः प्रयास करें।",
-                    "ta": f"மன்னிக்கவும், {target_district} க்கான நேரடி வானிலை தகவல் தற்போது கிடைக்கவில்லை.",
-                    "kn": f"ಕ್ಷಮಿಸಿ, {target_district} ಗೆ ನೇರ ಹವಾಮಾನ ಮಾಹಿತಿ ಸದ್ಯಕ್ಕೆ ಲಭ್ಯವಿಲ್ಲ.",
-                    "ml": f"ക്ഷമിക്കണം, {target_district} എന്ന സ്ഥലത്തെ തത്സമയ കാലാവസ്ഥാ വിവരങ്ങൾ ഇപ്പോൾ ലഭ്യമല്ല.",
-                    "mr": f"क्षमस्व, {target_district} साठी थेट हवामान माहिती सध्या उपलब्ध नाही.",
-                    "en": f"Sorry, live weather information for {target_district} is currently unavailable. Please verify the district name or try again later."
-                }
-                return ChatResponse(
-                    conversation_id=conversation_id,
-                    reply_text=fail_replies.get(language, fail_replies["en"]),
-                    language=language,
-                    intent="weather",
-                    routed_feature="weather",
-                    feature_data=None,
-                    suggested_actions=["Warangal", "Khammam", "Karimnagar", "Guntur"],
-                    audio_available=False,
-                    pending_workflow=None,
-                    collected_slots={}
-                )
-
-            feature_data = w_data.model_dump()
-
-            # A question explicitly about tomorrow must use the next daily
-            # forecast value, not today's observed/current conditions. Keep the
-            # full provider forecast in feature_data so the UI can show dates.
-            tomorrow_terms = {
-                "en": ("tomorrow",),
-                "te": ("రేపు",),
-                "hi": ("कल",),
-                "ta": ("நாளை",),
-                "kn": ("ನಾಳೆ",),
-                "ml": ("നാളെ",),
-                "mr": ("उद्या",),
-            }
-            asks_tomorrow = any(
-                term in message.lower() for term in tomorrow_terms.get(language, ())
-            )
-            tomorrow = w_data.forecast[1] if asks_tomorrow and len(w_data.forecast) > 1 else None
-            if asks_tomorrow and tomorrow is None:
-                no_tomorrow_forecast = {
-                    "te": f"{target_district} కోసం రేపటి వర్ష సూచన అందుబాటులో లేదు. ప్రస్తుత పరిస్థితులను రేపటి సూచనగా పరిగణించవద్దు.",
-                    "hi": f"{target_district} के लिए कल का वर्षा पूर्वानुमान उपलब्ध नहीं है। वर्तमान स्थिति को कल का पूर्वानुमान न मानें।",
-                    "ta": f"{target_district}க்கான நாளைய மழை முன்னறிவிப்பு கிடைக்கவில்லை. தற்போதைய நிலையை நாளைய முன்னறிவிப்பாகக் கருத வேண்டாம்.",
-                    "kn": f"{target_district}ಗೆ ನಾಳೆಯ ಮಳೆ ಮುನ್ಸೂಚನೆ ಲಭ್ಯವಿಲ್ಲ. ಪ್ರಸ್ತುತ ಸ್ಥಿತಿಯನ್ನು ನಾಳೆಯ ಮುನ್ಸೂಚನೆ ಎಂದು ಪರಿಗಣಿಸಬೇಡಿ.",
-                    "ml": f"{target_district} നാളത്തെ മഴ പ്രവചനം ലഭ്യമല്ല. ഇപ്പോഴത്തെ നിലയെ നാളത്തെ പ്രവചനമായി കണക്കാക്കരുത്.",
-                    "mr": f"{target_district}साठी उद्याचा पावसाचा अंदाज उपलब्ध नाही. सध्याची स्थिती उद्याचा अंदाज समजू नका.",
-                    "en": f"Tomorrow's rain forecast for {target_district} is unavailable. The current conditions are not a forecast for tomorrow.",
-                }
-                return ChatResponse(
-                    conversation_id=conversation_id,
-                    reply_text=no_tomorrow_forecast.get(language, no_tomorrow_forecast["en"]),
-                    language=language,
-                    intent="weather",
-                    routed_feature="weather",
-                    feature_data=feature_data,
-                    suggested_actions=["Check 7-day forecast", "Check another district"],
-                    audio_available=False,
-                    collected_slots={"district": target_district},
-                )
-
-            if tomorrow:
-                tomorrow_replies = {
-                    "te": f"{target_district} కోసం రేపటి ({tomorrow.date}) వర్షం పడే అవకాశం {tomorrow.precipitation_probability}%. మూలం: {w_data.source}",
-                    "hi": f"{target_district} के लिए कल ({tomorrow.date}) बारिश की संभावना {tomorrow.precipitation_probability}% है। स्रोत: {w_data.source}",
-                    "ta": f"{target_district}க்கான நாளைய ({tomorrow.date}) மழை வாய்ப்பு {tomorrow.precipitation_probability}%. மூலம்: {w_data.source}",
-                    "kn": f"{target_district}ಗೆ ನಾಳೆಯ ({tomorrow.date}) ಮಳೆಯ ಸಾಧ್ಯತೆ {tomorrow.precipitation_probability}%. ಮೂಲ: {w_data.source}",
-                    "ml": f"{target_district} നാളത്തെ ({tomorrow.date}) മഴ സാധ്യത {tomorrow.precipitation_probability}%. ഉറവിടം: {w_data.source}",
-                    "mr": f"{target_district}साठी उद्याच्या ({tomorrow.date}) पावसाची शक्यता {tomorrow.precipitation_probability}%. स्रोत: {w_data.source}",
-                    "en": f"Tomorrow's forecast for {target_district} ({tomorrow.date}) gives a {tomorrow.precipitation_probability}% chance of rain. Source: {w_data.source}",
-                }
-                reply = tomorrow_replies.get(language, tomorrow_replies["en"])
-            elif language == "te":
-                reply = (
-                    f"{target_district} లో ప్రస్తుత ఉష్ణోగ్రత {w_data.temperature}°C, {w_data.condition}.\n"
-                    f"వర్షం సంభావ్యత {w_data.rain_probability}% ఉంది.\n"
-                    f"వ్యవసాయ సలహా: {w_data.irrigation_advice}\n"
-                    f"మందుల పిచికారీ అనుకూలత: {w_data.spray_suitability}."
-                )
-            elif language == "hi":
-                reply = (
-                    f"{target_district} में वर्तमान तापमान {w_data.temperature}°C, {w_data.condition} है।\n"
-                    f"बारिश की संभावना {w_data.rain_probability}% है।\n"
-                    f"सिंचाई सलाह: {w_data.irrigation_advice}\n"
-                    f"छिड़काव उपयुक्तता: {w_data.spray_suitability}."
-                )
-            elif language == "ta":
-                reply = (
-                    f"{target_district} இல் தற்போதைய வெப்பநிலை {w_data.temperature}°C, {w_data.condition}.\n"
-                    f"மழை வாய்ப்பு {w_data.rain_probability}%.\n"
-                    f"பாசன ஆலோசனை: {w_data.irrigation_advice}\n"
-                    f"தெளிப்பான் நிலை: {w_data.spray_suitability}."
-                )
-            elif language == "kn":
-                reply = (
-                    f"{target_district} ನಲ್ಲಿ ಪ್ರಸ್ತುತ ತಾಪಮಾನ {w_data.temperature}°C, {w_data.condition}.\n"
-                    f"ಮಳೆಯ ಸಂಭವನೀಯತೆ {w_data.rain_probability}%.\n"
-                    f"ನೀರಾವರಿ ಸಲಹೆ: {w_data.irrigation_advice}\n"
-                    f"ಸಿಂಪಡಣೆ ಸ್ಥಿತಿ: {w_data.spray_suitability}."
-                )
-            elif language == "ml":
-                reply = (
-                    f"{target_district} ൽ ഇപ്പോഴത്തെ താപനില {w_data.temperature}°C, {w_data.condition}.\n"
-                    f"മഴ സാധ്യത {w_data.rain_probability}%.\n"
-                    f"നനയ്ക്കൽ നിർദ്ദേശം: {w_data.irrigation_advice}\n"
-                    f"തളിക്കൽ അനുയോജ്യത: {w_data.spray_suitability}."
-                )
-            elif language == "mr":
-                reply = (
-                    f"{target_district} मध्ये सध्याचे तापमान {w_data.temperature}°C, {w_data.condition} आहे.\n"
-                    f"पावसाची शक्यता {w_data.rain_probability}% आहे.\n"
-                    f"सिंचन सल्ला: {w_data.irrigation_advice}\n"
-                    f"फवारणी स्थिती: {w_data.spray_suitability}."
-                )
-            else:
-                reply = (
-                    f"Live forecast for {target_district}: Current temperature is {w_data.temperature}°C with {w_data.condition}.\n"
-                    f"Rain probability is {w_data.rain_probability}%.\n"
-                    f"Irrigation Advice: {w_data.irrigation_advice}\n"
-                    f"Spraying Conditions: {w_data.spray_suitability}."
-                )
-
-            return ChatResponse(
-                conversation_id=conversation_id,
-                reply_text=reply,
-                language=language,
-                intent="weather",
-                routed_feature="weather",
-                feature_data=feature_data,
-                suggested_actions=["Check 7-day forecast", "Check another district", "Hear audio update"],
-                audio_available=False,
-                pending_workflow=None,
-                collected_slots={"district": target_district}
-            )
-
         # 2. MARKET PRICES INTENT
-        elif active_intent == "market_prices":
+        if active_intent == "market_prices":
             # Check what slots we already have
             comm = collected_slots.get("commodity") or extract_commodity(message)
             dist = collected_slots.get("district") or extract_district(message)
@@ -1389,7 +1233,7 @@ class AssistantOrchestrator:
                 intent="crop_advisor",
                 routed_feature="crop_advisor",
                 feature_data=feature_data,
-                suggested_actions=["Open CHOOSE CROP Module", "Check Market Price", "Check Weather"],
+                suggested_actions=["Open CHOOSE CROP Module", "Check Market Price"],
                 audio_available=False,
                 pending_workflow=None,
                 collected_slots={"district": district, "soil_type": soil, "water_source": water, "growing_season": season}
@@ -1472,7 +1316,7 @@ class AssistantOrchestrator:
                 intent="crop_health",
                 routed_feature="crop_health",
                 feature_data=feature_data,
-                suggested_actions=["Open CHECK CROP Module", "Contact KVK (1800-180-1551)", "Check Weather"],
+                suggested_actions=["Open CHECK CROP Module", "Contact KVK (1800-180-1551)"],
                 audio_available=False,
                 pending_workflow=None,
                 collected_slots={"crop_name": c_name, "symptoms": symptoms}
@@ -1520,13 +1364,13 @@ class AssistantOrchestrator:
 
             m_lower = message.lower()
             if any(w in m_lower for w in ["chilli", "chili", "mirchi", "మిర్చి", "मिर्च"]):
-                sug_actions = ["Check Chilli Mandi Price", "Chilli Leaf Curl & Pests", "Weather Forecast"]
+                sug_actions = ["Check Chilli Mandi Price", "Chilli Leaf Curl & Pests"]
             elif any(w in m_lower for w in ["cotton", "patti", "పత్తి", "कपास"]):
-                sug_actions = ["Check Cotton Mandi Price", "Cotton Pest Management", "Weather Forecast"]
+                sug_actions = ["Check Cotton Mandi Price", "Cotton Pest Management"]
             elif any(w in m_lower for w in ["paddy", "rice", "వరి", "धान"]):
-                sug_actions = ["Check Paddy Mandi Price", "Paddy Storage Advice", "Weather Forecast"]
+                sug_actions = ["Check Paddy Mandi Price", "Paddy Storage Advice"]
             else:
-                sug_actions = ["Will it rain tomorrow?", "Which crop suits black soil?", "Check Chilli mandi prices", "My leaves are turning yellow"]
+                sug_actions = ["Which crop suits black soil?", "Check Chilli mandi prices", "My leaves are turning yellow"]
 
             return ChatResponse(
                 conversation_id=conversation_id,

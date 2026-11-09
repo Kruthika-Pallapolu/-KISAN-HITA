@@ -47,7 +47,6 @@ class TestAccountAuthentication(unittest.TestCase):
             self.assertEqual(self.signup(first, "same@example.test").status_code, 201)
             self.assertEqual(self.signup(second, "same@example.test").status_code, 409)
             self.assertEqual(second.get("/api/settings/profile").status_code, 401)
-            self.assertEqual(second.get("/api/weather/districts").status_code, 401)
             self.assertEqual(second.post("/api/auth/login", json={"email": "same@example.test", "password": "wrong-password"}).status_code, 401)
             self.assertEqual(second.post("/api/auth/login", json={"email": "same@example.test", "password": "correct-horse-42"}).status_code, 200)
             self.assertEqual(second.get("/api/settings/profile").status_code, 200)

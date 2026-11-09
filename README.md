@@ -19,10 +19,6 @@ Kisan Hita is a multilingual agricultural companion designed specifically for In
 <p align="center"><img src="docs/screenshots/home-features.png" width="1000" alt="Kisan Hita homepage farming features" /></p>
 <p align="center"><em>A view of the farming tools available in the application.</em></p>
 
-### Weather — Agricultural Weather Intelligence
-<p align="center"><img src="docs/screenshots/weather.png" width="1000" alt="Kisan Hita weather page" /></p>
-<p align="center"><em>Weather information and farmer-oriented guidance for a selected location.</em></p>
-
 ### Check My Crop — Crop Health
 <p align="center"><img src="docs/screenshots/check-my-crop.png" width="1000" alt="Kisan Hita Check My Crop page" /></p>
 <p align="center"><em>The crop health screen for sharing crop details and reviewing guidance.</em></p>
@@ -45,11 +41,10 @@ The application follows the visual direction of the supplied reference materials
   1. First-visit 7-language selector modal.
   2. Hero section: *"Voice-first Agricultural Intelligence — A little guidance. A better growing season."*
   3. Persistent Central Kisan Assistant entry point across every page.
-  4. Module 1: Agricultural Weather Intelligence with irrigation and spraying advisories.
-  5. Module 2: Choose My Crop Advisor workflow; reference recommendations are labeled as demo guidance rather than verified agronomic advice.
-  6. Module 3: Check My Crop Health with safety-first plant stress appraisal.
-  7. Module 4: Market Prices search interface; sample records are explicitly labeled DEMO and are not live official prices.
-  8. Module 5: Ask Kisan Hita conversational Q&A.
+  4. Choose My Crop Advisor workflow; reference recommendations are labeled as demo guidance rather than verified agronomic advice.
+  5. Check My Crop Health with safety-first plant stress appraisal.
+  6. Market Prices search interface; sample records are explicitly labeled DEMO and are not live official prices.
+  7. Ask Kisan Hita conversational Q&A.
 
 ### 🛡️ Safety & Integrity Corrections (Critical Non-Negotiables)
 - **Honest Crop Health Diagnosis**: The reference video showed an uploaded photo receiving a simulated specific disease diagnosis (*"Magnesium Deficiency / Early Blight"*) and an unverified chemical spray recommendation (*"Foliar spray of Magnesium Sulphate 1%"*). **Corrected**: Automated computer vision cannot responsibly prescribe synthetic chemicals to smallholder farmers based on a mobile photo alone. Kisan Hita accepts photographs and symptom descriptions, provides cautious non-chemical cultural management guidance (drainage, aeration, sanitation), explicitly warns against premature pesticide application, and connects the farmer to the local Krishi Vigyan Kendra (KVK) and Agricultural Extension Officer (AEO).
@@ -83,8 +78,8 @@ kiss/
 │   │   ├── database.py
 │   │   ├── main.py
 │   │   ├── models/schemas.py
-│   │   ├── routers/               # auth, assistant, weather, crops, market, voice, settings
-│   │   └── services/              # intent, Gemini, Prisma/Timbre, weather, market, crop services
+│   │   ├── routers/               # auth, assistant, crops, market, voice, settings
+│   │   └── services/              # intent, Gemini, Prisma/Timbre, market, crop services
 │   ├── data/                      # local illustrative market datasets
 │   ├── tests/
 │   ├── requirements.txt
@@ -182,7 +177,6 @@ The FastAPI application exposes these primary routes (interactive OpenAPI docume
 | Health / readiness | `GET /api/health`, `GET /api/ready` |
 | Signup, login, session, guest entry, logout | `/api/auth/*` |
 | Assistant conversation | `POST /api/assistant/chat` |
-| Weather lookup | `GET /api/weather/current`, `POST /api/weather/current`, `POST /api/weather/current/coordinates` |
 | Crop recommendations | `POST /api/crop-advisor/recommend` |
 | Crop health check | `POST /api/crop-health/diagnose` |
 | Market search | `GET /api/market-prices/search`, `POST /api/market-prices/search` |
@@ -192,7 +186,6 @@ Protected features require a valid account or guest session cookie as enforced b
 
 ## Data and provider configuration
 
-- Weather always uses WeatherAPI.com live data and never falls back to synthetic weather. Set backend-only `WEATHERAPI_KEY` for both location and coordinate requests. The state/city selectors are a demand-discovered catalogue, not a complete WeatherAPI directory: a location is listed only after an exact WeatherAPI Search result and a successful Forecast response. Catalogue entries are cached in memory per backend process for up to seven days (maximum 500 entries); search results are cached for six hours. The catalogue starts empty after a process restart and grows as successful location searches are made. Search API coverage is not claimed to be complete. A missing key or provider failure is returned as an unavailable error. `DEMO_DATA_ENABLED` applies only to other explicitly demo-backed features, such as market-price references.
 - Market prices use the included deterministic illustrative dataset. Results must be treated as demo references, not live AGMARKNET observations.
 - Gemini settings are `GEMINI_ENABLED`, `GEMINI_API_KEY`, and `GEMINI_MODEL`; current default model is `gemini-3.1-flash-lite`.
 - Gnani settings are `GNANI_LIVE_ENABLED`, `GNANI_PRISMA_ENABLED`, `GNANI_TIMBRE_ENABLED`, `GNANI_API_KEY`, `GNANI_PRISMA_MODEL`, `GNANI_TIMBRE_MODEL`, and `GNANI_TIMBRE_VOICE_EN`, `_TE`, `_HI`, `_TA`, `_KN`, `_ML`, `_MR`. The two modality switches cannot override the master switch. All three enable switches default to false. Credentials stay in the backend environment.

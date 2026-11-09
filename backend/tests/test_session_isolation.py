@@ -83,7 +83,7 @@ class TestAnonymousSessionIsolation(unittest.TestCase):
             self.assertEqual(first.status_code, 200)
 
             recovered = farmer_b.post("/api/assistant/chat", json={
-                "message": "Will it rain tomorrow in my district?",
+                "message": "Namaste, how are you?",
                 "conversation_id": stale_id,
                 "language": "en",
                 "farm_context": {},
@@ -91,15 +91,15 @@ class TestAnonymousSessionIsolation(unittest.TestCase):
             self.assertEqual(recovered.status_code, 200)
             fresh_id = recovered.json()["conversation_id"]
             self.assertNotEqual(fresh_id, stale_id)
-            self.assertEqual(recovered.json()["intent"], "weather")
-            self.assertEqual(recovered.json()["next_slot"], "district")
+            self.assertEqual(recovered.json()["intent"], "general")
+            self.assertIsNone(recovered.json()["feature_data"])
 
             farmer_b_history = farmer_b.get(f"/api/assistant/history/{fresh_id}")
             farmer_a_history = farmer_a.get(f"/api/assistant/history/{stale_id}")
             self.assertEqual(farmer_b_history.status_code, 200)
             self.assertEqual(farmer_a_history.status_code, 200)
             self.assertEqual([message["text"] for message in farmer_b_history.json() if message["sender"] == "user"], [
-                "Will it rain tomorrow in my district?",
+                "Namaste, how are you?",
             ])
             self.assertEqual([message["text"] for message in farmer_a_history.json() if message["sender"] == "user"], [
                 "Which crop suits black cotton soil?",
@@ -125,9 +125,8 @@ class TestAnonymousSessionIsolation(unittest.TestCase):
                 "farm_context": {},
             })
             self.assertEqual(second.status_code, 200)
-            self.assertEqual(second.json()["intent"], "weather")
-            self.assertEqual(second.json()["next_slot"], "district")
-            self.assertIn("Which district", second.json()["reply_text"])
+            self.assertEqual(second.json()["intent"], "general")
+            self.assertIsNone(second.json()["feature_data"])
 
             history = farmer.get(f"/api/assistant/history/{conversation_id}")
             self.assertEqual(history.status_code, 200)

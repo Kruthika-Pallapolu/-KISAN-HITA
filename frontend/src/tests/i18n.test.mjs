@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { translations, LANGUAGES } from '../i18n/translations.ts';
-import { getAgricultureTranslationCoverage, localizeCropName, localizeLocation, localizeMarketUnit, localizeSeason, localizeSoil, localizeWater, localizeWeatherCondition } from '../i18n/agriculture.ts';
+import { getAgricultureTranslationCoverage, localizeCropName, localizeLocation, localizeMarketUnit, localizeSeason, localizeSoil, localizeWater } from '../i18n/agriculture.ts';
 import { supplementalTranslations } from '../i18n/supplementalTranslations.ts';
 import { cropHealthCopy } from '../i18n/cropHealth.ts';
 import { cropAdviceAuditContent, localizeCropAdvice } from '../i18n/cropAdvisory.ts';
@@ -21,6 +21,7 @@ test('Base translation dictionaries and supplemental translation keys are comple
   const codes = ['te', 'en', 'hi', 'ta', 'kn', 'ml', 'mr'];
   const keys = Object.keys(translations.en).sort();
   for (const code of codes) assert.deepEqual(Object.keys(translations[code]).sort(), keys, `Base translation keys are incomplete for ${code}`);
+  for (const code of codes) { assert.equal(Object.hasOwn(translations[code], 'navWeather'), false); assert.equal(Object.hasOwn(translations[code], 'weatherTitle'), false); }
   for (const code of codes) assert.deepEqual(Object.keys(supplementalTranslations[code]).sort(), Object.keys(supplementalTranslations.en).sort(), `Supplemental translation keys are incomplete for ${code}`);
 });
 
@@ -102,25 +103,14 @@ test('Market location labels use curated translations or readable canonical name
     assert.ok(localizeLocation('Andhra Pradesh', language));
     assert.ok(localizeLocation('All States', language));
     assert.ok(localizeLocation('All Districts', language));
-    assert.ok(localizeWeatherCondition('Heavy Rain', language));
     assert.ok(localizeMarketUnit('₹/Quintal', language));
     assert.ok(supplementalTranslations[language].marketIllustrativeLabel);
     assert.ok(supplementalTranslations[language].marketIllustrativeDisclosure);
-    assert.ok(supplementalTranslations[language].weatherRainfall);
-    assert.ok(supplementalTranslations[language].weatherWindDirection);
-    assert.ok(supplementalTranslations[language].weatherVisibility);
-    assert.ok(supplementalTranslations[language].weatherForecast);
-    assert.ok(supplementalTranslations[language].weatherConfigurationMissing);
-    assert.ok(supplementalTranslations[language].weatherLocationInvalid);
-    assert.ok(supplementalTranslations[language].weatherDisclaimer);
-    assert.ok(localizeWeatherCondition('Cloudy', language, 1006));
   }
   assert.equal(localizeLocation('Nellore', 'en'), 'Nellore');
   assert.deepEqual(['te', 'en', 'hi', 'ta', 'kn', 'ml', 'mr'].map((language) => localizeLocation('Kolar', language)), ['కోలార్', 'Kolar', 'कोलार', 'கோலார்', 'ಕೋಲಾರ', 'കോലാർ', 'कोलार']);
   assert.equal(localizeLocation('Uncatalogued LGD District', 'te'), 'Uncatalogued LGD District');
   assert.equal(localizeLocation('Nellore', 'te'), 'నెల్లూరు');
-  assert.equal(localizeWeatherCondition('Cloudy', 'kn', 1006), 'ಮೋಡ ಕವಿದಿದೆ');
-  assert.equal(localizeWeatherCondition('Cloudy', 'ml', 1006), 'മേഘാവൃതം');
 });
 
 test('Crop health rendered prompts and key form/result copy have real localized content', () => {
@@ -214,13 +204,11 @@ test('Verify key translations exist across all 7 languages', () => {
     'startConversation',
     'navHome',
     'navAssistant',
-    'navWeather',
     'navChooseCrop',
     'navCheckCrop',
     'navMarketPrices',
     'assistantTitle',
     'assistantGreeting',
-    'weatherTitle',
     'cropAdvisorTitle',
     'cropHealthTitle',
     'marketTitle',

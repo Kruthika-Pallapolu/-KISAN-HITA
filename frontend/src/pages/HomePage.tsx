@@ -1,7 +1,7 @@
 import React from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { useAssistant } from '../context/AssistantContext';
-import { Bot, CloudSun, Sprout, ShieldAlert, TrendingUp, Mic, ArrowRight, CheckCircle2, Sparkles, Volume2 } from 'lucide-react';
+import { Bot, Sprout, ShieldAlert, TrendingUp, Mic, ArrowRight, CheckCircle2, Sparkles, Volume2 } from 'lucide-react';
 
 interface HomePageProps {
   onSelectTab: (tab: string) => void;
@@ -16,14 +16,6 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectTab }) => {
   };
 
   const featureCards = [
-    {
-      id: 'weather',
-      badge: t('badgeWeather'),
-      title: t('weatherTitle'),
-      desc: t('weatherSub'),
-      icon: <CloudSun size={26} style={{ color: 'var(--amber)' }} />,
-      stat: t('statWeather'),
-    },
     {
       id: 'choose-crop',
       badge: t('badgeCrop'),
@@ -164,7 +156,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectTab }) => {
         </div>
       </section>}
 
-      {/* 4 Feature Services Grid */}
+      {/* Farmer Services Grid */}
       <section className="home-services">
         <div className="home-services-content">
           <div style={{ marginBottom: '2.5rem' }}>

@@ -94,10 +94,6 @@ html, body {
   pointer-events: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .scroll-scrub-background__video { visibility: hidden; }
-}
-
 /* Container */
 .container {
   max-width: 1200px;
@@ -694,56 +690,6 @@ footer {
   .home-hero-actions { gap: .7rem !important; }
   .home-hero-actions .btn { padding: .8rem 1.2rem !important; }
   .module-page .card { padding: 1.15rem; }
-  .weather-page .weather-location-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-    justify-content: flex-start;
-    padding: 1rem;
-    gap: 1rem;
-  }
-  .weather-page .weather-location-controls {
-    flex-direction: column;
-    align-items: stretch;
-    width: 100%;
-    min-width: 0;
-  }
-  .weather-page .farm-location-fields--inline {
-    flex-direction: column !important;
-    align-items: stretch !important;
-    flex-wrap: nowrap;
-    width: 100%;
-    min-width: 0;
-    gap: .8rem;
-  }
-  .weather-page .farm-location-fields--inline .farm-location-fields__field {
-    width: 100%;
-    min-width: 0 !important;
-    flex: 0 0 auto !important;
-  }
-  .weather-page .farm-location-fields--inline .select-field {
-    width: 100% !important;
-    min-width: 0 !important;
-  }
-  .weather-page .farm-location-fields--inline [data-location-action="current"] {
-    align-self: stretch !important;
-    width: 100%;
-    white-space: normal !important;
-  }
-  .weather-page .weather-location-controls [data-weather-current-location] {
-    align-self: stretch;
-    width: 100%;
-    white-space: normal;
-  }
-  .weather-page .weather-location-actions {
-    width: 100%;
-    flex-wrap: wrap;
-    gap: .65rem;
-  }
-  .weather-page .weather-location-actions .btn { min-width: 0; }
-  .weather-page .weather-error-banner { flex-wrap: wrap; }
-  .weather-page .weather-error-banner > div { min-width: 0; overflow-wrap: anywhere; }
-  .weather-page .weather-current-reading { flex-wrap: wrap; }
-  .weather-page .weather-guidance-grid { grid-template-columns: minmax(0, 1fr) !important; }
   .guest-tool-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .guest-tool-card { min-height: 230px; padding: 1rem; }
 }

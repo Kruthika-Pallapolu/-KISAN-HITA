@@ -12,49 +12,15 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from app.database import init_db, get_user_profile, update_user_profile, save_conversation_message, get_conversation_history, clear_conversation_history
 from app.services.intent_router import detect_intent, AssistantOrchestrator
-from app.services.weather_service import WeatherService, WeatherProviderUnavailable
 from app.services.crop_service import CropAdvisorService
 from app.services.crop_health_service import CropHealthService
 from app.services.market_service import MarketPriceService
 from app.services.gnani_voice import get_voice_provider, MockGnaniProvider, generate_mock_wav
 from app.config import settings
 
-class MockHttpxResponse:
-    def __init__(self, status_code, json_data):
-        self.status_code = status_code
-        self._json_data = json_data
-
-    def json(self):
-        return self._json_data
-
-async def mock_weather_http_get(_client, url, params=None):
-    params = params or {}
-    if url.endswith("/search.json"):
-        district, _, rest = params.get("q", "").partition(",")
-        state = rest.split(",")[0].strip()
-        return MockHttpxResponse(200, [{"name": district.strip(), "region": state, "country": "India", "lat": 17.96, "lon": 79.59, "id": 1}])
-    payload = json.loads(json.dumps(WEATHERAPI_MOCK_DATA))
-    if params.get("q"):
-        lat, lon = params["q"].split(",")
-        payload["location"].update({"lat": float(lat), "lon": float(lon)})
-    return MockHttpxResponse(200, payload)
-
-WEATHERAPI_MOCK_DATA = {
-    "location": {"name": "Warangal", "region": "Telangana", "country": "India", "lat": 17.96, "lon": 79.59},
-    "current": {"temp_c": 29.5, "feelslike_c": 31.0, "humidity": 65, "wind_kph": 12.0,
-                "wind_dir": "SW", "vis_km": 10.0, "precip_mm": 0.0,
-                "condition": {"text": "Partly cloudy", "code": 1003, "icon": "//cdn.weatherapi.com/weather/64x64/day/116.png"}},
-    "forecast": {"forecastday": [
-        {"date": "2026-11-09", "day": {"maxtemp_c": 31.0, "mintemp_c": 22.0, "daily_chance_of_rain": 15, "condition": {"text": "Partly cloudy", "code": 1003, "icon": "//cdn.weatherapi.com/weather/64x64/day/116.png"}}},
-        {"date": "2026-11-10", "day": {"maxtemp_c": 32.0, "mintemp_c": 21.5, "daily_chance_of_rain": 20, "condition": {"text": "Cloudy", "code": 1006, "icon": "//cdn.weatherapi.com/weather/64x64/day/119.png"}}},
-        {"date": "2026-11-11", "day": {"maxtemp_c": 31.5, "mintemp_c": 22.0, "daily_chance_of_rain": 25, "condition": {"text": "Rain", "code": 1183, "icon": "//cdn.weatherapi.com/weather/64x64/day/296.png"}}},
-    ]},
-}
-
 class TestKisanHitaBackend(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        settings.WEATHERAPI_KEY = "offline-test-key"
         init_db()
 
     def test_database_profile_and_conversation(self):
@@ -82,12 +48,6 @@ class TestKisanHitaBackend(unittest.TestCase):
         self.assertEqual(len(get_conversation_history(cid)), 0)
 
     def test_intent_detection_multilingual(self):
-        # Weather
-        self.assertEqual(detect_intent("Will it rain tomorrow in Warangal?"), "weather")
-        self.assertEqual(detect_intent("రేపు వర్షం పడుతుందా?"), "weather")
-        self.assertEqual(detect_intent("क्या कल बारिश होगी?"), "weather")
-        self.assertEqual(detect_intent("நாளை மழை பெய்யுமா?"), "weather")
-        
         # Crop Advisor
         self.assertEqual(detect_intent("Which crop can I grow in black soil?"), "crop_advisor")
         self.assertEqual(detect_intent("Help me choose a crop"), "crop_advisor")
@@ -106,60 +66,6 @@ class TestKisanHitaBackend(unittest.TestCase):
         
         # General
         self.assertEqual(detect_intent("Namaste Kisan Assistant"), "general")
-
-    def test_weather_service_and_advisory(self):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        with patch("httpx.AsyncClient.get", new=mock_weather_http_get):
-            data = loop.run_until_complete(WeatherService.get_district_weather("Warangal", "Telangana", "en"))
-        loop.close()
-        
-        self.assertEqual(data.district, "Warangal")
-        self.assertGreater(data.temperature, -10)
-        self.assertLess(data.temperature, 55)
-        self.assertIsNotNone(data.irrigation_advice)
-        self.assertIsNotNone(data.spray_suitability)
-        self.assertIsNotNone(data.produce_protection)
-        self.assertFalse(data.is_official_alert)
-        self.assertGreaterEqual(len(data.forecast), 3)
-
-    def test_weather_service_fails_closed_when_current_measurements_are_missing(self):
-        # Isolate the provider-response assertion from a cached forecast in
-        # another test that uses the same district and coordinates.
-        WeatherService._forecast_cache.clear()
-        incomplete = {
-            "location": WEATHERAPI_MOCK_DATA["location"],
-            "current": {key: value for key, value in WEATHERAPI_MOCK_DATA["current"].items() if key != "temp_c"},
-            "forecast": WEATHERAPI_MOCK_DATA["forecast"],
-        }
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        async def incomplete_get(_client, url, params=None):
-            if url.endswith("/search.json"):
-                return await mock_weather_http_get(_client, url, params)
-            return MockHttpxResponse(200, incomplete)
-        with patch("httpx.AsyncClient.get", new=incomplete_get):
-            with self.assertRaises(WeatherProviderUnavailable):
-                loop.run_until_complete(WeatherService.get_district_weather("Warangal", "Telangana", "en"))
-        loop.close()
-
-    def test_weather_service_fails_closed_when_rain_probability_is_missing(self):
-        WeatherService._forecast_cache.clear()
-        incomplete = {
-            "location": WEATHERAPI_MOCK_DATA["location"],
-            "current": WEATHERAPI_MOCK_DATA["current"],
-            "forecast": {"forecastday": []},
-        }
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        async def incomplete_get(_client, url, params=None):
-            if url.endswith("/search.json"):
-                return await mock_weather_http_get(_client, url, params)
-            return MockHttpxResponse(200, incomplete)
-        with patch("httpx.AsyncClient.get", new=incomplete_get):
-            with self.assertRaises(WeatherProviderUnavailable):
-                loop.run_until_complete(WeatherService.get_district_weather("Warangal", "Telangana", "en"))
-        loop.close()
 
     def test_crop_advisor_evidence_and_constraints(self):
         res = CropAdvisorService.get_recommendations("Black Cotton Soil", "Good irrigation", "Kharif (Monsoon)", "Warangal", "Telangana")
@@ -238,31 +144,24 @@ class TestKisanHitaBackend(unittest.TestCase):
         self.assertGreater(len(stt_res.transcript), 0)
         self.assertEqual(provider.get_provider_info()["type"], "temporary_development")
 
-    def test_assistant_orchestrator_execution(self):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        with patch("httpx.AsyncClient.get", new=mock_weather_http_get):
-            
-            # Test weather query
-            resp_w = loop.run_until_complete(AssistantOrchestrator.process_user_query(
-                "Will it rain tomorrow?", "c1", language="en", farm_context={"district": "Warangal"}
-            ))
-            self.assertEqual(resp_w.routed_feature, "weather")
-            self.assertIsNotNone(resp_w.feature_data)
-            self.assertIn("Warangal", resp_w.reply_text)
-            self.assertFalse(resp_w.audio_available, "chat responses must not claim audio that was not generated")
-            
-            # Test Telugu query
-            resp_te = loop.run_until_complete(AssistantOrchestrator.process_user_query(
-                "రేపు వర్షం పడుతుందా?", "c2", language="te", farm_context={"district": "Nellore"}
-            ))
-            self.assertEqual(resp_te.routed_feature, "weather")
-            self.assertEqual(resp_te.language, "te")
-            self.assertIn("Nellore", resp_te.reply_text)
-            self.assertFalse(resp_te.audio_available)
-            
-        loop.close()
+    def test_assistant_does_not_claim_to_retrieve_local_forecasts(self):
+        async def scenario():
+            for language, question in [
+                ("en", "Will it rain tomorrow in my district?"),
+                ("te", "రేపు మా జిల్లాలో వర్షం పడుతుందా?"),
+                ("hi", "क्या कल मेरे जिले में बारिश होगी?"),
+                ("ta", "என் மாவட்டத்தில் நாளை மழை பெய்யுமா?"),
+                ("kn", "ನಾಳೆ ನಮ್ಮ ಜಿಲ್ಲೆಯಲ್ಲಿ ಮಳೆಯಾಗುತ್ತದೆಯೇ?"),
+                ("ml", "നാളെ എന്റെ ജില്ലയിൽ മഴയുണ്ടാകுமോ?"),
+                ("mr", "उद्या माझ्या जिल्ह्यात पाऊस पडेल का?"),
+            ]:
+                response = await AssistantOrchestrator.process_user_query(question, f"no_forecast_{language}", language=language)
+                self.assertEqual(response.intent, "general")
+                self.assertEqual(response.routed_feature, "ask_kisan")
+                self.assertIsNone(response.feature_data)
+                self.assertIsNone(response.pending_workflow)
+                self.assertTrue(response.reply_text)
+        asyncio.run(scenario())
 
     def test_assistant_does_not_answer_unhandled_questions_with_a_generic_greeting(self):
         unavailable_replies = {

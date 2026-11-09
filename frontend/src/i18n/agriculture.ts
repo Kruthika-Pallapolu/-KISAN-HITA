@@ -995,232 +995,19 @@ const locations: Record<SupportedLanguage, Record<string, string>> = {
   },
 };
 
-const weatherConditions: Record<SupportedLanguage, Record<string, string>> = {
-  en: {
-    'Clear Sky': 'Clear sky',
-    'Mainly Clear': 'Mainly clear',
-    'Partly Cloudy': 'Partly cloudy',
-    Cloudy: 'Cloudy',
-    Snow: 'Snow', 'Moderate Snow': 'Moderate snow', 'Heavy Snow': 'Heavy snow', Sleet: 'Sleet', 'Ice Pellets': 'Ice pellets',
-    Overcast: 'Overcast',
-    Fog: 'Fog',
-    'Depositing Rime Fog': 'Freezing fog',
-    'Light Drizzle': 'Light drizzle',
-    'Moderate Drizzle': 'Moderate drizzle',
-    'Dense Drizzle': 'Heavy drizzle',
-    'Slight Rain': 'Light rain',
-    'Moderate Rain': 'Moderate rain',
-    'Heavy Rain': 'Heavy rain',
-    'Slight Rain Showers': 'Light rain showers',
-    'Moderate Rain Showers': 'Moderate rain showers',
-    'Violent Rain Showers': 'Very heavy rain showers',
-    Thunderstorm: 'Thunderstorm',
-    'Thunderstorm with Hail': 'Thunderstorm with hail',
-  },
-  te: {
-    'Clear Sky': 'ఆకాశం నిర్మలంగా ఉంది',
-    'Mainly Clear': 'ఎక్కువగా నిర్మలమైన ఆకాశం',
-    'Partly Cloudy': 'కొంత మేఘావృతం',
-    Cloudy: 'మేఘావృతం',
-    Snow: 'మంచు', 'Moderate Snow': 'మోస్తరు మంచు', 'Heavy Snow': 'భారీ మంచు', Sleet: 'మంచు కలిసిన వర్షం', 'Ice Pellets': 'మంచు గుళికలు',
-    Overcast: 'పూర్తిగా మేఘావృతం',
-    Fog: 'పొగమంచు',
-    'Depositing Rime Fog': 'గడ్డకట్టే పొగమంచు',
-    'Light Drizzle': 'తేలికపాటి చిరుజల్లు',
-    'Moderate Drizzle': 'మోస్తరు చిరుజల్లు',
-    'Dense Drizzle': 'దట్టమైన చిరుజల్లు',
-    'Slight Rain': 'తేలికపాటి వర్షం',
-    'Moderate Rain': 'మోస్తరు వర్షం',
-    'Heavy Rain': 'భారీ వర్షం',
-    'Slight Rain Showers': 'తేలికపాటి జల్లులు',
-    'Moderate Rain Showers': 'మోస్తరు జల్లులు',
-    'Violent Rain Showers': 'తీవ్ర వర్షపు జల్లులు',
-    Thunderstorm: 'ఉరుములతో కూడిన వర్షం',
-    'Thunderstorm with Hail': 'వడగళ్లతో కూడిన ఉరుముల వర్షం',
-  },
-  hi: {
-    'Clear Sky': 'साफ़ आसमान',
-    'Mainly Clear': 'अधिकतर साफ़',
-    'Partly Cloudy': 'आंशिक बादल',
-    Cloudy: 'बादल छाए हुए',
-    Snow: 'बर्फ़', 'Moderate Snow': 'मध्यम बर्फ़बारी', 'Heavy Snow': 'भारी बर्फ़बारी', Sleet: 'बर्फ़ीली वर्षा', 'Ice Pellets': 'बर्फ़ के दाने',
-    Overcast: 'घने बादल',
-    Fog: 'कोहरा',
-    'Depositing Rime Fog': 'जमने वाला कोहरा',
-    'Light Drizzle': 'हल्की बूंदाबांदी',
-    'Moderate Drizzle': 'मध्यम बूंदाबांदी',
-    'Dense Drizzle': 'घनी बूंदाबांदी',
-    'Slight Rain': 'हल्की बारिश',
-    'Moderate Rain': 'मध्यम बारिश',
-    'Heavy Rain': 'भारी बारिश',
-    'Slight Rain Showers': 'हल्की वर्षा की बौछारें',
-    'Moderate Rain Showers': 'मध्यम वर्षा की बौछारें',
-    'Violent Rain Showers': 'तेज़ वर्षा की बौछारें',
-    Thunderstorm: 'गरज-चमक के साथ बारिश',
-    'Thunderstorm with Hail': 'ओलों के साथ गरज-चमक',
-  },
-  ta: {
-    'Clear Sky': 'வானம் தெளிவாக உள்ளது',
-    'Mainly Clear': 'பெரும்பாலும் தெளிவு',
-    'Partly Cloudy': 'ஓரளவு மேகமூட்டம்',
-    Cloudy: 'மேகமூட்டம்',
-    Snow: 'பனி', 'Moderate Snow': 'மிதமான பனிப்பொழிவு', 'Heavy Snow': 'கடும் பனிப்பொழிவு', Sleet: 'பனி கலந்த மழை', 'Ice Pellets': 'பனித் துகள்கள்',
-    Overcast: 'முழு மேகமூட்டம்',
-    Fog: 'மூடுபனி',
-    'Depositing Rime Fog': 'உறைபனி மூடுபனி',
-    'Light Drizzle': 'லேசான தூறல்',
-    'Moderate Drizzle': 'மிதமான தூறல்',
-    'Dense Drizzle': 'அடர்ந்த தூறல்',
-    'Slight Rain': 'லேசான மழை',
-    'Moderate Rain': 'மிதமான மழை',
-    'Heavy Rain': 'கனமழை',
-    'Slight Rain Showers': 'லேசான மழைத் தூறல்கள்',
-    'Moderate Rain Showers': 'மிதமான மழைத் தூறல்கள்',
-    'Violent Rain Showers': 'தீவிர மழைத் தூறல்கள்',
-    Thunderstorm: 'இடியுடன் மழை',
-    'Thunderstorm with Hail': 'ஆலங்கட்டியுடன் இடியுடன் மழை',
-  },
-  kn: {
-    'Clear Sky': 'ಆಕಾಶ ತಿಳಿಯಾಗಿದೆ',
-    'Mainly Clear': 'ಹೆಚ್ಚಾಗಿ ತಿಳಿಯಾದ ಆಕಾಶ',
-    'Partly Cloudy': 'ಭಾಗಶಃ ಮೋಡ ಕವಿದಿದೆ',
-    Cloudy: 'ಮೋಡ ಕವಿದಿದೆ',
-    Snow: 'ಹಿಮ', 'Moderate Snow': 'ಮಧ್ಯಮ ಹಿಮಪಾತ', 'Heavy Snow': 'ಭಾರಿ ಹಿಮಪಾತ', Sleet: 'ಹಿಮಮಿಶ್ರಿತ ಮಳೆ', 'Ice Pellets': 'ಹಿಮದ ಕಣಗಳು',
-    Overcast: 'ಮೋಡ ಕವಿದಿದೆ',
-    Fog: 'ಮಂಜು',
-    'Depositing Rime Fog': 'ಹಿಮದ ಮಂಜು',
-    'Light Drizzle': 'ಹಗುರ ತುಂತುರು ಮಳೆ',
-    'Moderate Drizzle': 'ಮಧ್ಯಮ ತುಂತುರು ಮಳೆ',
-    'Dense Drizzle': 'ದಟ್ಟ ತುಂತುರು ಮಳೆ',
-    'Slight Rain': 'ಹಗುರ ಮಳೆ',
-    'Moderate Rain': 'ಮಧ್ಯಮ ಮಳೆ',
-    'Heavy Rain': 'ಭಾರಿ ಮಳೆ',
-    'Slight Rain Showers': 'ಹಗುರ ಮಳೆಯ ತುಂತುರು',
-    'Moderate Rain Showers': 'ಮಧ್ಯಮ ಮಳೆಯ ತುಂತುರು',
-    'Violent Rain Showers': 'ತೀವ್ರ ಮಳೆಯ ತುಂತುರು',
-    Thunderstorm: 'ಗುಡುಗು ಸಹಿತ ಮಳೆ',
-    'Thunderstorm with Hail': 'ಆಲಿಕಲ್ಲು ಸಹಿತ ಗುಡುಗು ಮಳೆ',
-  },
-  ml: {
-    'Clear Sky': 'ആകാശം തെളിഞ്ഞിരിക്കുന്നു',
-    'Mainly Clear': 'മിക്കവാറും തെളിഞ്ഞ ആകാശം',
-    'Partly Cloudy': 'ഭാഗികമായി മേഘാവൃതം',
-    Cloudy: 'മേഘാവൃതം',
-    Snow: 'മഞ്ഞ്', 'Moderate Snow': 'മിതമായ മഞ്ഞുവീഴ്ച', 'Heavy Snow': 'കനത്ത മഞ്ഞുവീഴ്ച', Sleet: 'മഞ്ഞ് കലർന്ന മഴ', 'Ice Pellets': 'മഞ്ഞുതുള്ളികൾ',
-    Overcast: 'മേഘാവൃതം',
-    Fog: 'മൂടൽമഞ്ഞ്',
-    'Depositing Rime Fog': 'തണുത്തുറയുന്ന മൂടൽമഞ്ഞ്',
-    'Light Drizzle': 'നേരിയ ചാറ്റൽമഴ',
-    'Moderate Drizzle': 'മിതമായ ചാറ്റൽമഴ',
-    'Dense Drizzle': 'കനത്ത ചാറ്റൽമഴ',
-    'Slight Rain': 'നേരിയ മഴ',
-    'Moderate Rain': 'മിതമായ മഴ',
-    'Heavy Rain': 'കനത്ത മഴ',
-    'Slight Rain Showers': 'നേരിയ മഴച്ചാറ്റൽ',
-    'Moderate Rain Showers': 'മിതമായ മഴച്ചാറ്റൽ',
-    'Violent Rain Showers': 'ശക്തമായ മഴച്ചാറ്റൽ',
-    Thunderstorm: 'ഇടിമിന്നലോടുകൂടിയ മഴ',
-    'Thunderstorm with Hail': 'ആലിപ്പഴത്തോടുകൂടിയ ഇടിമിന്നൽ',
-  },
-  mr: {
-    'Clear Sky': 'आकाश निरभ्र',
-    'Mainly Clear': 'बहुतेक निरभ्र',
-    'Partly Cloudy': 'अंशतः ढगाळ',
-    Cloudy: 'ढगाळ',
-    Snow: 'बर्फ', 'Moderate Snow': 'मध्यम हिमवृष्टी', 'Heavy Snow': 'जोरदार हिमवृष्टी', Sleet: 'बर्फमिश्रित पाऊस', 'Ice Pellets': 'बर्फाचे कण',
-    Overcast: 'ढगाळ',
-    Fog: 'धुके',
-    'Depositing Rime Fog': 'गोठणारे धुके',
-    'Light Drizzle': 'हलकी रिमझिम',
-    'Moderate Drizzle': 'मध्यम रिमझिम',
-    'Dense Drizzle': 'दाट रिमझिम',
-    'Slight Rain': 'हलका पाऊस',
-    'Moderate Rain': 'मध्यम पाऊस',
-    'Heavy Rain': 'मुसळधार पाऊस',
-    'Slight Rain Showers': 'हलकी पावसाची सर',
-    'Moderate Rain Showers': 'मध्यम पावसाच्या सरी',
-    'Violent Rain Showers': 'जोरदार पावसाच्या सरी',
-    Thunderstorm: 'मेघगर्जनेसह पाऊस',
-    'Thunderstorm with Hail': 'गारांसह मेघगर्जना',
-  },
-};
-
 const quintal: Record<SupportedLanguage, string> = {
-  en: 'Quintal (100 kg)',
-  te: 'క్వింటాల్ (100 కిలోలు)',
-  hi: 'क्विंटल (100 किलोग्राम)',
-  ta: 'குவிண்டால் (100 கிலோ)',
-  kn: 'ಕ್ವಿಂಟಾಲ್ (100 ಕೆ.ಜಿ.)',
-  ml: 'ക്വിന്റൽ (100 കിലോ)',
-  mr: 'क्विंटल (100 किलोग्रॅम)',
+  en: 'Quintal (100 kg)', te: 'క్వింటాల్ (100 కిలోలు)', hi: 'क्विंटल (100 किलोग्राम)',
+  ta: 'குவிண்டால் (100 கிலோ)', kn: 'ಕ್ವಿಂಟಾಲ್ (100 ಕೆ.ಜಿ.)', ml: 'ക്വിന്റൽ (100 കിലോ)', mr: 'क्विंटल (100 किलोग्रॅम)',
 };
-
 const allStates: Record<SupportedLanguage, string> = {
-  en: 'All States',
-  te: 'అన్ని రాష్ట్రాలు',
-  hi: 'सभी राज्य',
-  ta: 'அனைத்து மாநிலங்கள்',
-  kn: 'ಎಲ್ಲ ರಾಜ್ಯಗಳು',
-  ml: 'എല്ലാ സംസ്ഥാനങ്ങളും',
-  mr: 'सर्व राज्ये',
+  en: 'All States', te: 'అన్ని రాష్ట్రాలు', hi: 'सभी राज्य', ta: 'அனைத்து மாநிலங்கள்',
+  kn: 'ಎಲ್ಲ ರಾಜ್ಯಗಳು', ml: 'എല്ലാ സംസ്ഥാനങ്ങളും', mr: 'सर्व राज्ये',
 };
-
 const allDistricts: Record<SupportedLanguage, string> = {
-  en: 'All Districts',
-  te: 'అన్ని జిల్లాలు',
-  hi: 'सभी ज़िले',
-  ta: 'அனைத்து மாவட்டங்கள்',
-  kn: 'ಎಲ್ಲ ಜಿಲ್ಲೆಗಳು',
-  ml: 'എല്ലാ ജില്ലകളും',
-  mr: 'सर्व जिल्हे',
+  en: 'All Districts', te: 'అన్ని జిల్లాలు', hi: 'सभी ज़िले', ta: 'அனைத்து மாவட்டங்கள்',
+  kn: 'ಎಲ್ಲ ಜಿಲ್ಲೆಗಳು', ml: 'എല്ലാ ജില്ലകളും', mr: 'सर्व जिल्हे',
 };
-
 const clean = (value: string) => value.trim().toLocaleLowerCase().replace(/\s+/g, ' ');
-
-export const localizeCropName = (value: string, language: SupportedLanguage): string =>
-  cropNames[language]?.[clean(value)] || value;
-
-export const localizeSoil = (value: string, language: SupportedLanguage): string =>
-  soils[language]?.[value] || value;
-
-export const localizeWater = (value: string, language: SupportedLanguage): string =>
-  waters[language]?.[value] || value;
-
-export const localizeSeason = (value: string, language: SupportedLanguage): string =>
-  seasons[language]?.[value] || value;
-
-export const localizeLocation = (value: string, language: SupportedLanguage): string => {
-  if (value === 'All States' || value === 'All') return allStates[language] || 'All States';
-  if (value === 'All Districts') return allDistricts[language] || 'All Districts';
-  // Proper names not covered by the curated dictionary stay in canonical
-  // English. Automatic transliteration produced unreadable district labels.
-  return locations[language]?.[value] || value;
-};
-
-const WEATHERAPI_CONDITION_LABELS: Record<number, string> = {
-  1000: 'Clear Sky', 1003: 'Partly Cloudy', 1006: 'Cloudy', 1009: 'Overcast',
-  1030: 'Fog', 1135: 'Fog', 1147: 'Depositing Rime Fog',
-  1063: 'Slight Rain', 1072: 'Light Drizzle', 1150: 'Light Drizzle', 1153: 'Light Drizzle', 1168: 'Light Drizzle', 1171: 'Dense Drizzle',
-  1180: 'Slight Rain', 1183: 'Slight Rain', 1186: 'Moderate Rain', 1189: 'Moderate Rain',
-  1192: 'Heavy Rain', 1195: 'Heavy Rain', 1198: 'Slight Rain', 1201: 'Moderate Rain', 1240: 'Slight Rain Showers',
-  1243: 'Moderate Rain Showers', 1246: 'Violent Rain Showers',
-  1066: 'Snow', 1210: 'Snow', 1213: 'Snow', 1255: 'Snow',
-  1216: 'Moderate Snow', 1219: 'Moderate Snow',
-  1114: 'Heavy Snow', 1117: 'Heavy Snow', 1222: 'Heavy Snow', 1225: 'Heavy Snow', 1258: 'Heavy Snow',
-  1069: 'Sleet', 1204: 'Sleet', 1207: 'Sleet', 1249: 'Sleet', 1252: 'Sleet',
-  1237: 'Ice Pellets', 1261: 'Ice Pellets', 1264: 'Ice Pellets',
-  1087: 'Thunderstorm', 1273: 'Thunderstorm', 1276: 'Thunderstorm with Hail', 1279: 'Thunderstorm', 1282: 'Thunderstorm',
-};
-
-export const localizeWeatherCondition = (value: string, language: SupportedLanguage, conditionCode?: number): string => {
-  // WeatherAPI currently provides condition text for English, Telugu, Hindi,
-  // Tamil and Marathi. Use our curated shared condition labels for Kannada
-  // and Malayalam so common conditions remain localized without transliteration.
-  if ((language === 'kn' || language === 'ml') && conditionCode && WEATHERAPI_CONDITION_LABELS[conditionCode]) {
-    return weatherConditions[language][WEATHERAPI_CONDITION_LABELS[conditionCode]] || value;
-  }
-  return weatherConditions[language]?.[value] || value;
-};
 
 export function localizeMarketUnit(unit: string, language: SupportedLanguage): string {
   const normalized = unit.toLocaleLowerCase().replace(/[₹\s/]/g, '');
@@ -1248,20 +1035,36 @@ export const agricultureAuditKeys = {
   water: Object.keys(waters.en),
   seasons: Object.keys(seasons.en),
   districts: Object.keys(locations.te),
-  weather: Object.keys(weatherConditions.en),
+};
+
+export const localizeCropName = (value: string, language: SupportedLanguage): string =>
+  cropNames[language]?.[clean(value)] || value;
+
+export const localizeSoil = (value: string, language: SupportedLanguage): string =>
+  soils[language]?.[value] || value;
+
+export const localizeWater = (value: string, language: SupportedLanguage): string =>
+  waters[language]?.[value] || value;
+
+export const localizeSeason = (value: string, language: SupportedLanguage): string =>
+  seasons[language]?.[value] || value;
+
+export const localizeLocation = (value: string, language: SupportedLanguage): string => {
+  if (value === 'All States' || value === 'All') return allStates[language] || 'All States';
+  if (value === 'All Districts') return allDistricts[language] || 'All Districts';
+  // Proper names without a curated label remain canonical English.
+  return locations[language]?.[value] || value;
 };
 
 export function getAgricultureTranslationCoverage(): Record<SupportedLanguage, boolean> {
   const codes: SupportedLanguage[] = ['te', 'en', 'hi', 'ta', 'kn', 'ml', 'mr'];
-  return Object.fromEntries(
-    codes.map((code) => [
-      code,
-      [...agricultureAuditKeys.crops].every((key) => Boolean(cropNames[code]?.[key])) &&
-        agricultureAuditKeys.soils.every((key) => Boolean(soils[code]?.[key])) &&
-        agricultureAuditKeys.water.every((key) => Boolean(waters[code]?.[key])) &&
-        agricultureAuditKeys.seasons.every((key) => Boolean(seasons[code]?.[key])) &&
-        agricultureAuditKeys.districts.every((key) => Boolean(locations[code]?.[key])) &&
-        agricultureAuditKeys.weather.every((key) => Boolean(weatherConditions[code]?.[key])),
-    ])
-  ) as Record<SupportedLanguage, boolean>;
+  const coverage = Object.fromEntries(codes.map((code) => {
+    const complete = [...agricultureAuditKeys.crops].every((key) => Boolean(cropNames[code]?.[key])) &&
+      agricultureAuditKeys.soils.every((key) => Boolean(soils[code]?.[key])) &&
+      agricultureAuditKeys.water.every((key) => Boolean(waters[code]?.[key])) &&
+      agricultureAuditKeys.seasons.every((key) => Boolean(seasons[code]?.[key])) &&
+      agricultureAuditKeys.districts.every((key) => Boolean(locations[code]?.[key]));
+    return [code, complete];
+  }));
+  return coverage as Record<SupportedLanguage, boolean>;
 }

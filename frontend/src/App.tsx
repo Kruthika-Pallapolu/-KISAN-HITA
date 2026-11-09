@@ -10,7 +10,6 @@ import { SettingsModal } from './components/SettingsModal';
 import { KisanAssistantModal } from './components/KisanAssistantModal';
 import { PersistentAssistantBar } from './components/PersistentAssistantBar';
 import { HomePage } from './pages/HomePage';
-import { WeatherPage } from './pages/WeatherPage';
 import { ChooseCropPage } from './pages/ChooseCropPage';
 import { CheckCropPage } from './pages/CheckCropPage';
 import { MarketPricesPage } from './pages/MarketPricesPage';
@@ -26,7 +25,6 @@ const AppContent: React.FC = () => {
 
   const handleRouteFeature = (feature: string) => {
     if (feature === 'home' || feature === 'dashboard') setCurrentTab('home');
-    else if (feature === 'weather') setCurrentTab('weather');
     else if (feature === 'crop_advisor' || feature === 'choose-crop') setCurrentTab('choose-crop');
     else if (feature === 'crop_health' || feature === 'check-crop') setCurrentTab('check-crop');
     else if (feature === 'market_prices' || feature === 'market-prices') setCurrentTab('market-prices');
@@ -46,7 +44,6 @@ const AppContent: React.FC = () => {
       {/* Main Page Content */}
       <main style={{ flex: 1, zIndex: 1 }}>
         {currentTab === 'home' && <HomePage onSelectTab={handleRouteFeature} />}
-        {currentTab === 'weather' && <WeatherPage onNavigate={handleRouteFeature} />}
         {currentTab === 'choose-crop' && <ChooseCropPage onNavigate={handleRouteFeature} />}
         {currentTab === 'check-crop' && <CheckCropPage onNavigate={handleRouteFeature} />}
         {currentTab === 'market-prices' && <MarketPricesPage onNavigate={handleRouteFeature} />}

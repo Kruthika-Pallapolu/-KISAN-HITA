@@ -128,7 +128,7 @@ export interface GeolocationResult {
 /**
  * Requests coordinates only after a user action, reverse-geocodes through
  * Nominatim, and returns canonical names with in-memory coordinates for an
- * exact weather request. Callers must not persist the coordinates.
+ * exact location-aware request. Callers must not persist the coordinates.
  * If the geocoder cannot resolve an exact district, nothing is guessed.
  */
 export async function detectCurrentLocation(): Promise<GeolocationResult> {

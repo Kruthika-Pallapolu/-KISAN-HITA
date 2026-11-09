@@ -12,7 +12,6 @@ from .database import init_db, check_database_health, check_storage_writable
 from .services.gemini_service import GeminiAIService
 from .routers import (
     assistant,
-    weather,
     crop_advisor,
     crop_health,
     market_prices,
@@ -58,7 +57,6 @@ app.add_middleware(
 
 # Include all module routers
 app.include_router(assistant.router)
-app.include_router(weather.router)
 app.include_router(crop_advisor.router)
 app.include_router(crop_health.router)
 app.include_router(market_prices.router)

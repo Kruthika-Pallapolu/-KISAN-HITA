@@ -38,65 +38,8 @@ test('assistant UI renders the corrected backend reply text without replacing it
   assert.match(page, /msg\.text/);
 });
 
-test('Weather shows only its demand-discovered verified WeatherAPI location catalogue', () => {
-  const page = source('../pages/WeatherPage.tsx');
-  assert.match(page, /fetch\('\/api\/weather\/locations'/);
-  assert.match(page, /\/api\/weather\/locations\/\$\{locationId\}\/weather/);
-  assert.match(page, /supportedStates/);
-  assert.match(page, /locationsForState/);
-  assert.match(page, /item\.region === selectedState/);
-  assert.match(page, /weatherNoVerifiedLocations/);
-  assert.match(page, /weatherLocationsFailed/);
-  assert.match(page, /credentials: 'same-origin'/);
-  assert.match(page, /interface WeatherResponse \{[\s\S]*?district: string;[\s\S]*?state: string;[\s\S]*?location_id\?: number;[\s\S]*?temperature: number;[\s\S]*?forecast: WeatherDay\[\];/);
-  assert.match(page, /coordinate_source\?: string/);
-  assert.match(page, /weatherData\.coordinate_source && \([\s\S]*?weatherData\.coordinate_source/);
-  assert.match(page, /setWeatherData\(data\)/);
-  assert.match(page, /activeRequest\.current\?\.abort\(\)/);
-  assert.match(page, /setWeatherData\(null\)/);
-  assert.match(page, /request !== requestId\.current/);
-  assert.match(page, /\/api\/weather\/current\/coordinates/);
-  assert.match(page, /latitude: coordinates\.latitude, longitude: coordinates\.longitude/);
-  assert.match(page, /if \(!profileLoaded \|\| !locationInitialized\) return/);
-  assert.match(page, /signal: controller\.signal/);
-  assert.match(page, /t\('weatherUnavailable'\)/);
-  assert.match(page, /fetchCatalogWeather\(selectedLocationId\)/);
-  assert.match(page, /disabled=\{locationsLoading \|\| supportedStates\.length === 0\}/);
-  assert.match(page, /const \[selectedState, setSelectedState\] = useState\(''\)/);
-  assert.match(page, /setSelectedLocationId\(null\)/);
-  assert.match(page, /setSelectedDistrict\(''\)/);
-  assert.match(page, /localizeLocation\(location\.name, language\)/);
-  assert.match(page, /const isCatalogLocation = Boolean\(data\.location_id && data\.country\?\.toLowerCase\(\) === 'india' && data\.state\)/);
-  assert.match(page, /setSelectedLocationId\(isCatalogLocation \? data\.location_id! : null\)/);
-  assert.doesNotMatch(page, /indiaAdminLgd|getDistrictsForState/);
-});
 
-test('Weather GPS sends exact coordinates to the backend without browser geocoding or saving a profile location', () => {
-  const page = source('../pages/WeatherPage.tsx');
-  const fields = source('../components/FarmLocationFields.tsx');
-  const gpsHandler = page.match(/const handleCurrentLocation = \(automatic = false\) => \{([\s\S]*?)\n  \};/)?.[1] || '';
-  assert.match(page, /navigator\.geolocation\.getCurrentPosition/);
-  assert.match(page, /setGpsCoordinates\(coordinates\)/);
-  assert.match(page, /data-weather-current-location/);
-  assert.match(gpsHandler, /position\.coords\.latitude/);
-  assert.match(gpsHandler, /position\.coords\.longitude/);
-  assert.doesNotMatch(gpsHandler, /updateProfile|fetch\(['"]https?:/);
-  assert.match(fields, /showCurrentLocation\?: boolean/);
-  assert.doesNotMatch(page, /<FarmLocationFields/);
-});
 
-test('Weather supports any typed location through the WeatherAPI-backed search route', () => {
-  const page = source('../pages/WeatherPage.tsx');
-  assert.match(page, /fetch\(`\/api\/weather\/search\?\$\{params\.toString\(\)\}`/);
-  assert.match(page, /new URLSearchParams\(\{ query, language \}\)/);
-  assert.match(page, /weatherSearchNoResults/);
-  assert.match(page, /weatherSearchAmbiguous/);
-  assert.match(page, /weatherSearchPlaceholder/);
-  assert.match(page, /setWeatherData\(null\)/);
-  assert.match(page, /automaticLocationRequested/);
-  assert.match(page, /handleCurrentLocation\(true\)/);
-  assert.doesNotMatch(page, /district:\s*['"]Nellore['"]/);
-});
 
 test('Assistant input renders one Prisma microphone and never falls back to browser recognition', () => {
   const modal = source('../components/KisanAssistantModal.tsx');

@@ -133,7 +133,7 @@ class TestAssistantContextQuality(unittest.TestCase):
 
     def test_central_instruction_covers_context_language_and_factual_boundaries(self):
         prompt = build_assistant_instruction("te", {"district":"Nellore", "soil_type":"Black Cotton Soil", "season":"Kharif"})
-        for phrase in ["Telugu", "Nellore", "Black Cotton Soil", "Kharif", "Never claim to have seen", "Never invent live weather forecasts", "at most one"]:
+        for phrase in ["Telugu", "Nellore", "Black Cotton Soil", "Kharif", "Never claim to have seen", "Never invent a local forecast", "at most one"]:
             self.assertIn(phrase, prompt)
 
     def test_market_provider_failure_never_reaches_gemini_or_guesses_a_price(self):

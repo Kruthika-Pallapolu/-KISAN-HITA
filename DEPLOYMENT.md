@@ -12,8 +12,7 @@ Kisan Hita is built on a high-throughput, async Python stack designed for low-la
 - **Persistence**: SQLite database (`kisan_hita.db`) storing user profiles, conversation history, and sequential slot sessions.
 - **Reasoning Provider**: Google Gemini 2.5 Flash for natural-language understanding, multi-turn reasoning, and crop foliage visual inspection.
 - **Data Providers**:
-  - **Weather**: WeatherAPI.com current conditions and forecasts. Configure the backend-only `WEATHERAPI_KEY`; district and country/state matching is validated before coordinates are cached.
-  - **Market Prices**: Disabled until each record has a traceable official bulletin/source URL.
+  - **Market Prices**: Local illustrative references are clearly labeled and are not live official prices.
   - **Crop Advisor**: Verified recommendations are disabled until regional source documents are bundled and traceable.
   - **Crop Health**: Cautious symptom appraisal, root aeration guidelines, and KVK helpline referrals (`1800-180-1551`).
 - **Voice Protection**: Zero Gnani live credits consumed during development (`GNANI_LIVE_ENABLED=false`).
@@ -126,8 +125,6 @@ If scaling horizontally across multiple container replicas, migrate SQLite model
 | `GNANI_LIVE_ENABLED` | Boolean | `false` | **Keep false** to protect ~5,000 balance |
 | `GNANI_API_KEY` | Secret | `""` | Gnani API Key (dormant) |
 | `GNANI_TOKEN` | Secret | `""` | Gnani Token (dormant) |
-| `WEATHERAPI_KEY` | Secret | `""` | WeatherAPI.com API key (required for all district and coordinate weather requests; keep backend-only) |
-| `WEATHER_TIMEOUT_SECONDS`| Float | `6.0` | WeatherAPI.com request timeout; provider errors are reported unavailable |
 
 ---
 
@@ -181,17 +178,12 @@ python3 -m unittest discover -s backend/tests
 # 2. Test readiness endpoint
 curl -s http://127.0.0.1:8000/api/ready | jq .
 
-# 3. Test weather query
-curl -s -X POST http://127.0.0.1:8000/api/weather/current \
-  -H "Content-Type: application/json" \
-  -d '{"district":"Warangal","state":"Telangana","language":"te"}' | jq .
-
-# 4. Test market prices query
+# 3. Test market prices query
 curl -s -X POST http://127.0.0.1:8000/api/market-prices/search \
   -H "Content-Type: application/json" \
   -d '{"commodity":"Chilli","district":"Warangal","language":"te"}' | jq .
 
-# 5. Test crop advisor recommendation
+# 4. Test crop advisor recommendation
 curl -s -X POST http://127.0.0.1:8000/api/crop-advisor/recommend \
   -H "Content-Type: application/json" \
   -d '{"soil_type":"Black Cotton Soil","water_availability":"Good irrigation","growing_season":"Kharif (Monsoon)","district":"Warangal"}' | jq .
@@ -202,7 +194,7 @@ curl -s -X POST http://127.0.0.1:8000/api/crop-advisor/recommend \
 ## 7. Rollback & Troubleshooting Procedures
 
 - **DNS or Network Timeouts on Outbound Calls**:
-  If the backend cannot reach WeatherAPI.com or Gemini, verify DNS settings (`/etc/resolv.conf`) and outbound egress firewall rules on port 443. Live weather requests return an explicit unavailable response; there is no live-to-demo fallback.
+  If the backend cannot reach Gemini, verify DNS settings (`/etc/resolv.conf`) and outbound egress firewall rules on port 443.
 - **Database Locked / Write Failures**:
   Verify write permissions on the directory hosting `kisan_hita.db`. If using Docker, ensure the mount volume has UID 1000 permissions (`chown -R 1000:1000 /data`).
 - **Gemini Key Rate Limiting**:

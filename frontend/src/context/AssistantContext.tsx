@@ -414,7 +414,7 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode; isGuest?: 
           'పత్తి ఆకులు పసుపు రంగులోకి మారుతున్నాయి',
         ]
       : [
-          'Will it rain tomorrow in my district?',
+          'How can I improve soil health before sowing?',
           'Which crop suits black cotton soil?',
           'Check current chilli mandi price',
           'Cotton leaves are turning yellow with spots',

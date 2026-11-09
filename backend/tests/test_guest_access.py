@@ -13,8 +13,6 @@ from PIL import Image
 from backend.app.config import settings
 from backend.app.main import app
 from backend.app.database import get_db_connection, init_db
-from backend.app.models.schemas import WeatherData
-from backend.app.services.weather_service import WeatherService, WeatherCoverageUnavailable, WeatherGeocodingUnavailable, WeatherProviderUnavailable
 from backend.app.services.market_service import MarketPriceService
 
 
@@ -37,54 +35,6 @@ class TestGuestAccess(unittest.TestCase):
         self.assertTrue(client.cookies.get("kisan_session"))
         self.assertIn("httponly", response.headers.get("set-cookie", "").lower())
         return client, response.json()["context_id"]
-
-    def test_weather_catalogue_routes_return_only_verified_options_and_use_provider_id(self):
-        client, _ = self.guest()
-        self.assertEqual(client.get("/api/weather/locations").json(), [])
-        option = {"location_id": 42, "name": "Nellore", "region": "Andhra Pradesh", "country": "India"}
-        with patch("backend.app.routers.weather.WeatherService.get_supported_locations", return_value=[option]) as catalogue:
-            response = client.get("/api/weather/locations", params={"state": "Andhra Pradesh"})
-        self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual(response.json(), [option])
-        catalogue.assert_called_once_with("Andhra Pradesh")
-
-        weather = WeatherData(
-            district="Nellore", state="Andhra Pradesh", country="India", location_id=42,
-            temperature=30, condition="Cloudy", humidity=70, wind_speed=8, rain_probability=25,
-            advisory="Check local conditions.", irrigation_advice="Review soil moisture.",
-            spray_suitability="Check conditions before spraying.", produce_protection="Protect harvested produce.",
-            source="WeatherAPI.com live forecast", forecast=[],
-        )
-        with patch("backend.app.routers.weather.WeatherService.get_catalog_location_weather", new=AsyncMock(return_value=weather)) as fetch:
-            response = client.get("/api/weather/locations/42/weather", params={"language": "en"})
-        self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual(response.json()["location_id"], 42)
-        fetch.assert_awaited_once_with(42, "en")
-
-    def test_weather_location_and_provider_errors_have_distinct_api_responses(self):
-        client, _ = self.guest()
-        invalid = client.get("/api/weather/current", params={"district": "Hyderabad", "state": "Andhra Pradesh"})
-        self.assertEqual(invalid.status_code, 422, invalid.text)
-        self.assertIn("not a district in Andhra Pradesh", invalid.json()["detail"])
-        invalid_post = client.post("/api/weather/current", json={"district": "Nellore", "state": "Haryana", "language": "en"})
-        self.assertEqual(invalid_post.status_code, 422, invalid_post.text)
-
-        async def fail_coverage(*_args, **_kwargs):
-            raise WeatherCoverageUnavailable("Weather coverage is currently unavailable for Karnal, Haryana.")
-        async def fail_geocoder(*_args, **_kwargs):
-            raise WeatherGeocodingUnavailable("District geocoding timed out.")
-        async def fail_provider(*_args, **_kwargs):
-            raise WeatherProviderUnavailable("WeatherAPI.com returned HTTP 503.")
-
-        for failure, expected_code in [
-            (fail_coverage, "weather_coverage_unavailable"),
-            (fail_geocoder, "weather_geocoding_unavailable"),
-            (fail_provider, "weather_provider_unavailable"),
-        ]:
-            with self.subTest(code=expected_code), patch.object(WeatherService, "get_district_weather", new=failure):
-                response = client.get("/api/weather/current", params={"district": "Karnal", "state": "Haryana"})
-                self.assertEqual(response.status_code, 503, response.text)
-                self.assertEqual(response.json()["detail"]["code"], expected_code)
 
     def test_guest_can_use_farmer_features_and_account_routes_stay_protected(self):
         with TestClient(app) as client:
@@ -147,25 +97,6 @@ class TestGuestAccess(unittest.TestCase):
             self.assertIn("local KVK", crop_reply)
             self.assertNotIn("DEMO", crop_reply.upper())
 
-            weather_data = WeatherData(
-                district="Nellore", state="Andhra Pradesh", temperature=30, feels_like=32,
-                condition="Cloudy", humidity=70, wind_speed=8, rain_probability=25,
-                advisory="Check local observations before field work.", irrigation_advice="Review soil moisture.",
-                spray_suitability="Check current conditions.", produce_protection="Monitor crops.",
-                source="Test provider fixture", forecast=[],
-            )
-            with patch("backend.app.routers.weather.WeatherService.get_district_weather", new=AsyncMock(return_value=weather_data)):
-                weather = client.get("/api/weather/current", params={"district": "Nellore", "state": "Andhra Pradesh", "language": "en"})
-            self.assertEqual(weather.status_code, 200, weather.text)
-            self.assertEqual(weather.json()["district"], "Nellore")
-
-            with patch("backend.app.routers.weather.WeatherService.get_coordinate_weather", new=AsyncMock(return_value=weather_data)) as gps_weather:
-                gps = client.post("/api/weather/current/coordinates", json={
-                    "latitude": 14.123456, "longitude": 79.654321, "language": "en",
-                })
-            self.assertEqual(gps.status_code, 200, gps.text)
-            gps_weather.assert_awaited_once_with(14.123456, 79.654321, "en")
-
             self.assertEqual(client.get("/api/settings/profile").status_code, 401)
             self.assertEqual(client.post("/api/settings/test-ai").status_code, 401)
             voice_config = client.get("/api/voice/config")
@@ -175,11 +106,6 @@ class TestGuestAccess(unittest.TestCase):
             self.assertNotIn("api_key", voice_config.json())
             self.assertEqual(client.post("/api/auth/logout").status_code, 401)
             self.assertEqual(client.get("/api/auth/me").json()["authenticated"], False)
-            districts = client.get("/api/weather/districts")
-            self.assertEqual(districts.status_code, 200)
-            self.assertEqual(districts.json(), [])
-            self.assertEqual(client.get("/api/weather/locations").json(), [])
-
             # This machine has a verified local English system voice. Assert
             # that guest TTS returns actual audio bytes, never an empty success.
             tts = client.post("/api/voice/tts", json={"text": "Hello farmer", "language": "en"})
