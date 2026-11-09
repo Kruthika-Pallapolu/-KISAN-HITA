@@ -73,6 +73,12 @@ class WeatherCoordinatesRequest(BaseModel):
     def check_language(cls, v: str) -> str:
         return _validate_language(v)
 
+class WeatherLocationOption(BaseModel):
+    location_id: int
+    name: str
+    region: str
+    country: str
+
 class ForecastDay(BaseModel):
     day_name: str
     date: str
@@ -88,6 +94,7 @@ class WeatherData(BaseModel):
     district: str
     state: str
     country: Optional[str] = None
+    location_id: Optional[int] = None
     temperature: float
     feels_like: Optional[float] = None
     condition: str

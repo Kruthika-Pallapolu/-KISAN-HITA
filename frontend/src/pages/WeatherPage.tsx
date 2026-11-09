@@ -3,8 +3,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { useFarmProfile } from '../context/FarmProfileContext';
 import { useAssistant } from '../context/AssistantContext';
 import { localizeLocation, localizeWeatherCondition } from '../i18n/agriculture';
-import { FarmLocationFields } from '../components/FarmLocationFields';
-import { getState, isDistrictInState } from '../services/geography';
+import { isDistrictInState } from '../services/geography';
 import { CloudSun, Droplets, Wind, CloudRain, Shield, AlertTriangle, Volume2, Square, RefreshCw, MapPin, ArrowLeft, Compass, Eye, Search } from 'lucide-react';
 
 interface WeatherDay {
@@ -23,6 +22,7 @@ interface WeatherResponse {
   district: string;
   state: string;
   country?: string;
+  location_id?: number;
   temperature: number;
   feels_like?: number;
   condition: string;
@@ -44,6 +44,13 @@ interface WeatherResponse {
   forecast: WeatherDay[];
 }
 
+interface SupportedWeatherLocation {
+  location_id: number;
+  name: string;
+  region: string;
+  country: string;
+}
+
 interface WeatherPageProps {
   onNavigate?: (tab: string) => void;
 }
@@ -55,6 +62,10 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
 
   const [selectedState, setSelectedState] = useState('');
   const [selectedDistrict, setSelectedDistrict] = useState('');
+  const [selectedLocationId, setSelectedLocationId] = useState<number | null>(null);
+  const [supportedLocations, setSupportedLocations] = useState<SupportedWeatherLocation[]>([]);
+  const [locationsLoading, setLocationsLoading] = useState(false);
+  const [locationsError, setLocationsError] = useState<string | null>(null);
   const [locationInitialized, setLocationInitialized] = useState(false);
   const [locationQuery, setLocationQuery] = useState('');
   const [activeLocationQuery, setActiveLocationQuery] = useState('');
@@ -70,6 +81,27 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
   const automaticLocationRequested = useRef(false);
   const automaticLocationPending = useRef(true);
   const languageLocale: Record<string, string> = { en: 'en-IN', te: 'te-IN', hi: 'hi-IN', ta: 'ta-IN', kn: 'kn-IN', ml: 'ml-IN', mr: 'mr-IN' };
+  const supportedStates = [...new Set(supportedLocations.filter(item => item.country.toLowerCase() === 'india' && item.region).map(item => item.region))].sort((a, b) => a.localeCompare(b));
+  const locationsForState = supportedLocations.filter(item => item.country.toLowerCase() === 'india' && item.region === selectedState);
+
+  const loadSupportedLocations = async () => {
+    setLocationsLoading(true);
+    setLocationsError(null);
+    try {
+      const response = await fetch('/api/weather/locations', { credentials: 'same-origin' });
+      if (!response.ok) throw new Error(t('weatherLocationsFailed'));
+      const locations: SupportedWeatherLocation[] = await response.json();
+      setSupportedLocations(locations.filter(item => Number.isInteger(item.location_id) && item.name && item.region && item.country.toLowerCase() === 'india'));
+    } catch {
+      setLocationsError(t('weatherLocationsFailed'));
+    } finally {
+      setLocationsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (profileLoaded) void loadSupportedLocations();
+  }, [profileLoaded]);
   const fetchWeather = async (district: string, state: string, coordinates?: { latitude: number; longitude: number } | null) => {
     if (!coordinates && (!state || !district || !isDistrictInState(district, state))) return;
     const request = ++requestId.current;
@@ -120,6 +152,40 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
     }
   };
 
+  const fetchCatalogWeather = async (locationId: number) => {
+    const request = ++requestId.current;
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
+    setWeatherData(null);
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({ language });
+      const response = await fetch(`/api/weather/locations/${locationId}/weather?${params.toString()}`, {
+        signal: controller.signal, credentials: 'same-origin',
+      });
+      if (!response.ok) {
+        let code = '';
+        try {
+          const payload = await response.clone().json();
+          code = typeof payload?.detail === 'object' ? payload.detail.code || '' : '';
+        } catch { /* Keep localized status fallback. */ }
+        throw new Error(code === 'weather_configuration_missing' ? t('weatherConfigurationMissing')
+          : code === 'weather_location_not_found' ? t('weatherSearchNoResults')
+            : code === 'weather_coverage_unavailable' ? t('weatherCoverageUnavailable')
+              : response.status >= 500 ? t('weatherUnavailable') : t('weatherRequestFailed'));
+      }
+      const data: WeatherResponse = await response.json();
+      if (request === requestId.current) setWeatherData(data);
+    } catch (err: any) {
+      if (controller.signal.aborted || request !== requestId.current) return;
+      setError(err instanceof Error ? err.message : t('weatherRequestFailed'));
+    } finally {
+      if (request === requestId.current) setLoading(false);
+    }
+  };
+
   const searchWeatherLocation = async (rawQuery: string) => {
     const query = rawQuery.trim();
     if (query.length < 2) {
@@ -134,6 +200,7 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
     const controller = new AbortController();
     activeRequest.current = controller;
     setActiveLocationQuery(query);
+    setSelectedLocationId(null);
     setGpsCoordinates(null);
     setLocating(false);
     setWeatherData(null);
@@ -169,6 +236,16 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
       const data: WeatherResponse = await res.json();
       if (request !== requestId.current) return;
       setWeatherData(data);
+      const isCatalogLocation = Boolean(data.location_id && data.country?.toLowerCase() === 'india' && data.state);
+      setSelectedState(isCatalogLocation ? data.state : '');
+      setSelectedDistrict(isCatalogLocation ? data.district : '');
+      setSelectedLocationId(isCatalogLocation ? data.location_id! : null);
+      if (isCatalogLocation) {
+        setSupportedLocations(current => {
+          const next = current.filter(item => item.location_id !== data.location_id);
+          return [...next, { location_id: data.location_id!, name: data.district, region: data.state, country: data.country! }];
+        });
+      }
     } catch (err: any) {
       if (controller.signal.aborted || request !== requestId.current) return;
       console.error('Weather location search error:', err);
@@ -184,7 +261,7 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
     if (locating && !gpsCoordinates) return;
     if (automaticLocationPending.current && !gpsCoordinates) return;
     if (gpsCoordinates) fetchWeather(selectedDistrict, selectedState, gpsCoordinates);
-    else if (selectedDistrict && selectedState && isDistrictInState(selectedDistrict, selectedState)) fetchWeather(selectedDistrict, selectedState);
+    else if (selectedLocationId) fetchCatalogWeather(selectedLocationId);
     else {
       activeRequest.current?.abort();
       requestId.current += 1;
@@ -192,7 +269,7 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
       setError(null);
       setLoading(false);
     }
-  }, [profileLoaded, locationInitialized, selectedDistrict, selectedState, gpsCoordinates, language, currentLocationError, activeLocationQuery, locating]);
+  }, [profileLoaded, locationInitialized, selectedLocationId, selectedDistrict, selectedState, gpsCoordinates, language, currentLocationError, activeLocationQuery, locating]);
 
   useEffect(() => () => {
     requestId.current += 1;
@@ -201,14 +278,26 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
 
   useEffect(() => {
     if (!profileLoaded) return;
-    const savedState = getState(profile.state)?.name || '';
-    const savedDistrict = savedState && isDistrictInState(profile.district, savedState) ? profile.district : '';
-    setSelectedState(savedState);
-    setSelectedDistrict(savedDistrict);
     setLocationInitialized(true);
-  }, [profileLoaded, profile.state, profile.district]);
+  }, [profileLoaded]);
 
-  const handleLocationChange = (state: string, district: string) => {
+  const handleSupportedStateChange = (state: string) => {
+    geolocationRequestId.current += 1;
+    automaticLocationPending.current = false;
+    activeRequest.current?.abort();
+    requestId.current += 1;
+    setWeatherData(null);
+    setError(null);
+    setGpsCoordinates(null);
+    setActiveLocationQuery('');
+    setSelectedLocationId(null);
+    setSelectedState(state);
+    setSelectedDistrict('');
+  };
+
+  const handleSupportedLocationChange = (locationId: number) => {
+    const location = supportedLocations.find(item => item.location_id === locationId);
+    if (!location) return;
     geolocationRequestId.current += 1;
     automaticLocationPending.current = false;
     setWeatherData(null);
@@ -216,10 +305,17 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
     setGpsCoordinates(null);
     setActiveLocationQuery('');
     setLocationQuery('');
-    setCurrentLocationError(null);
-    setSelectedState(state);
-    setSelectedDistrict(district);
-    updateProfile({ state, district });
+    setSelectedState(location.region);
+    setSelectedDistrict(location.name);
+    setSelectedLocationId(locationId);
+    updateProfile({ state: location.region, district: location.name });
+  };
+
+  const clearSupportedLocation = () => {
+    setSelectedLocationId(null);
+    setSelectedDistrict('');
+    setWeatherData(null);
+    setError(null);
   };
 
   const handleCurrentLocation = (automatic = false) => {
@@ -232,6 +328,7 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
     setError(null);
     setCurrentLocationError(null);
     setGpsCoordinates(null);
+    setSelectedLocationId(null);
     setActiveLocationQuery('');
     setLocationQuery('');
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
@@ -364,14 +461,24 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
               <MapPin size={18} />
               <span>{t('districtSelect')}:</span>
             </div>
-            <FarmLocationFields
-              state={selectedState}
-              district={selectedDistrict}
-              layout="inline"
-              onChange={handleLocationChange}
-              showCurrentLocation={false}
-              disabled={!profileLoaded || !locationInitialized}
-            />
+            <div className="farm-location-fields farm-location-fields--inline weather-verified-location-fields">
+              <div className="input-group farm-location-fields__field" style={{ marginBottom: 0, flex: 1, minWidth: '180px' }}>
+                <label className="input-label" htmlFor="weather-supported-state">{t('stateSelect')}</label>
+                <select id="weather-supported-state" className="select-field" value={selectedState} disabled={locationsLoading || supportedStates.length === 0} onChange={(event) => handleSupportedStateChange(event.target.value)}>
+                  <option value="">{locationsLoading ? t('weatherLocationsLoading') : t('stateSelect')}</option>
+                  {supportedStates.map(state => <option key={state} value={state}>{localizeLocation(state, language)}</option>)}
+                </select>
+              </div>
+              <div className="input-group farm-location-fields__field" style={{ marginBottom: 0, flex: 1, minWidth: '180px' }}>
+                <label className="input-label" htmlFor="weather-supported-city">{t('districtSelect')}</label>
+                <select id="weather-supported-city" className="select-field" value={selectedLocationId ?? ''} disabled={!selectedState || locationsForState.length === 0 || locationsLoading} onChange={(event) => event.target.value ? handleSupportedLocationChange(Number(event.target.value)) : clearSupportedLocation()}>
+                  <option value="">{selectedState ? t('districtSelect') : t('weatherSelectStateFirst')}</option>
+                  {locationsForState.map(location => <option key={location.location_id} value={location.location_id}>{localizeLocation(location.name, language)}</option>)}
+                </select>
+              </div>
+              {locationsError && <div role="alert" style={{ flexBasis: '100%', color: '#f87171' }}>{locationsError} <button type="button" className="btn btn-secondary" onClick={() => void loadSupportedLocations()}>{t('retry')}</button></div>}
+              {!locationsLoading && !locationsError && supportedLocations.length === 0 && <div role="status" style={{ flexBasis: '100%', color: 'var(--text-muted)' }}>{t('weatherNoVerifiedLocations')}</div>}
+            </div>
             <button type="button" className="btn btn-secondary" data-weather-current-location onClick={() => handleCurrentLocation()} disabled={locating || !profileLoaded || !locationInitialized}>
               <MapPin size={15} aria-hidden="true" />
               {locating ? t('detectingLocation') : t('useCurrentLocation')}
@@ -418,11 +525,13 @@ export const WeatherPage: React.FC<WeatherPageProps> = ({ onNavigate }) => {
             <button
               onClick={() => activeLocationQuery
                 ? void searchWeatherLocation(activeLocationQuery)
-                : (gpsCoordinates || selectedDistrict) && fetchWeather(selectedDistrict, selectedState, gpsCoordinates)}
+                : selectedLocationId
+                  ? void fetchCatalogWeather(selectedLocationId)
+                  : (gpsCoordinates || selectedDistrict) && fetchWeather(selectedDistrict, selectedState, gpsCoordinates)}
               className="btn btn-secondary"
               style={{ padding: '0.55rem 0.9rem' }}
               title={t('weatherRefresh')}
-              disabled={(!selectedDistrict && !gpsCoordinates && !activeLocationQuery) || loading}
+              disabled={(!selectedLocationId && !selectedDistrict && !gpsCoordinates && !activeLocationQuery) || loading}
             >
               <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             </button>

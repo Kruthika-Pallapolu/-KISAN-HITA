@@ -64,6 +64,8 @@ class TestWeatherDirectoryAndWeatherApi(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         WeatherService._geocode_cache.clear()
         WeatherService._forecast_cache.clear()
+        WeatherService._location_search_cache.clear()
+        WeatherService._supported_location_catalog.clear()
         self.demo_patch = patch.object(settings, "DEMO_DATA_ENABLED", False)
         self.demo_patch.start()
         self.addCleanup(self.demo_patch.stop)
@@ -154,6 +156,7 @@ class TestWeatherDirectoryAndWeatherApi(unittest.IsolatedAsyncioTestCase):
             with self.subTest(query=query):
                 WeatherService._geocode_cache.clear()
                 WeatherService._forecast_cache.clear()
+                WeatherService._location_search_cache.clear()
                 payload = forecast_payload("Bengaluru South", "Karnataka", "India")
                 payload["location"].update({"lat": 12.8, "lon": 77.5})
                 calls = []
@@ -243,10 +246,49 @@ class TestWeatherDirectoryAndWeatherApi(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls[0][1]["q"], "Nellore, Andhra Pradesh, India")
         self.assertTrue(calls[1][0].endswith("/forecast.json"))
         self.assertEqual(calls[1][1]["q"], "14.44,79.98")
+        self.assertIsNone(weather.location_id)
         self.assertEqual(calls[1][1]["days"], 3)
         self.assertNotIn("key", calls[0][0])
         self.assertEqual(calls[0][1]["key"], "offline-test-key")
         self.assertEqual(calls[1][1]["key"], "offline-test-key")
+
+    async def test_successful_exact_search_and_forecast_populate_verified_catalog_and_reuse_id(self):
+        candidate = search_result("Nellore", "Andhra Pradesh", "India")
+        calls = []
+
+        async def get(_client, url, params=None):
+            calls.append((url, params or {}))
+            return FakeResponse([candidate] if url.endswith("search.json") else forecast_payload())
+
+        with patch("httpx.AsyncClient.get", new=get):
+            result = await WeatherService.get_location_weather("Nellore, Andhra Pradesh")
+            options = WeatherService.get_supported_locations("Andhra Pradesh")
+            selected = await WeatherService.get_catalog_location_weather(1, "te")
+
+        self.assertEqual([(item["location_id"], item["name"], item["region"], item["country"]) for item in options],
+                         [(1, "Nellore", "Andhra Pradesh", "India")])
+        self.assertEqual(result.location_id, 1)
+        self.assertEqual(selected.location_id, 1)
+        self.assertEqual(calls[0][0].rsplit("/", 1)[-1], "search.json")
+        self.assertEqual(calls[1][1]["q"], "id:1")
+        self.assertEqual(calls[2][1]["q"], "id:1")
+        self.assertEqual(WeatherService.get_supported_locations("Karnataka"), [])
+
+    async def test_failed_or_non_indian_forecast_does_not_publish_catalog_location(self):
+        candidate = search_result("Nellore", "Andhra Pradesh", "India")
+        wrong_location = forecast_payload("Kadapa", "Andhra Pradesh", "India")
+
+        async def get(_client, url, params=None):
+            return FakeResponse([candidate] if url.endswith("search.json") else wrong_location)
+
+        with patch("httpx.AsyncClient.get", new=get):
+            with self.assertRaises(WeatherCoverageUnavailable):
+                await WeatherService.get_location_weather("Nellore, Andhra Pradesh")
+        self.assertEqual(WeatherService.get_supported_locations(), [])
+
+    async def test_catalog_rejects_entries_without_verified_region(self):
+        WeatherService._remember_supported_location({**search_result(), "region": ""})
+        self.assertEqual(WeatherService.get_supported_locations(), [])
 
     async def test_wrong_country_state_or_district_search_results_are_rejected(self):
         cases = [

@@ -38,6 +38,29 @@ class TestGuestAccess(unittest.TestCase):
         self.assertIn("httponly", response.headers.get("set-cookie", "").lower())
         return client, response.json()["context_id"]
 
+    def test_weather_catalogue_routes_return_only_verified_options_and_use_provider_id(self):
+        client, _ = self.guest()
+        self.assertEqual(client.get("/api/weather/locations").json(), [])
+        option = {"location_id": 42, "name": "Nellore", "region": "Andhra Pradesh", "country": "India"}
+        with patch("backend.app.routers.weather.WeatherService.get_supported_locations", return_value=[option]) as catalogue:
+            response = client.get("/api/weather/locations", params={"state": "Andhra Pradesh"})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json(), [option])
+        catalogue.assert_called_once_with("Andhra Pradesh")
+
+        weather = WeatherData(
+            district="Nellore", state="Andhra Pradesh", country="India", location_id=42,
+            temperature=30, condition="Cloudy", humidity=70, wind_speed=8, rain_probability=25,
+            advisory="Check local conditions.", irrigation_advice="Review soil moisture.",
+            spray_suitability="Check conditions before spraying.", produce_protection="Protect harvested produce.",
+            source="WeatherAPI.com live forecast", forecast=[],
+        )
+        with patch("backend.app.routers.weather.WeatherService.get_catalog_location_weather", new=AsyncMock(return_value=weather)) as fetch:
+            response = client.get("/api/weather/locations/42/weather", params={"language": "en"})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["location_id"], 42)
+        fetch.assert_awaited_once_with(42, "en")
+
     def test_weather_location_and_provider_errors_have_distinct_api_responses(self):
         client, _ = self.guest()
         invalid = client.get("/api/weather/current", params={"district": "Hyderabad", "state": "Andhra Pradesh"})
@@ -154,7 +177,8 @@ class TestGuestAccess(unittest.TestCase):
             self.assertEqual(client.get("/api/auth/me").json()["authenticated"], False)
             districts = client.get("/api/weather/districts")
             self.assertEqual(districts.status_code, 200)
-            self.assertEqual(len(districts.json()), 784)
+            self.assertEqual(districts.json(), [])
+            self.assertEqual(client.get("/api/weather/locations").json(), [])
 
             # This machine has a verified local English system voice. Assert
             # that guest TTS returns actual audio bytes, never an empty success.

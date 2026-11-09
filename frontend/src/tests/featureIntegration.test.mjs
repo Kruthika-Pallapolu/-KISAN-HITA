@@ -38,12 +38,17 @@ test('assistant UI renders the corrected backend reply text without replacing it
   assert.match(page, /msg\.text/);
 });
 
-test('Weather requests the selected location, discards stale responses and offers retry', () => {
+test('Weather shows only its demand-discovered verified WeatherAPI location catalogue', () => {
   const page = source('../pages/WeatherPage.tsx');
-  assert.match(page, /new URLSearchParams\(\{ district, state, language \}\)/);
-  assert.match(page, /fetch\(`\/api\/weather\/current\?\$\{new URLSearchParams\(\{ district, state, language \}\)\.toString\(\)\}`/);
+  assert.match(page, /fetch\('\/api\/weather\/locations'/);
+  assert.match(page, /\/api\/weather\/locations\/\$\{locationId\}\/weather/);
+  assert.match(page, /supportedStates/);
+  assert.match(page, /locationsForState/);
+  assert.match(page, /item\.region === selectedState/);
+  assert.match(page, /weatherNoVerifiedLocations/);
+  assert.match(page, /weatherLocationsFailed/);
   assert.match(page, /credentials: 'same-origin'/);
-  assert.match(page, /interface WeatherResponse \{[\s\S]*?district: string;[\s\S]*?state: string;[\s\S]*?temperature: number;[\s\S]*?forecast: WeatherDay\[\];/);
+  assert.match(page, /interface WeatherResponse \{[\s\S]*?district: string;[\s\S]*?state: string;[\s\S]*?location_id\?: number;[\s\S]*?temperature: number;[\s\S]*?forecast: WeatherDay\[\];/);
   assert.match(page, /coordinate_source\?: string/);
   assert.match(page, /weatherData\.coordinate_source && \([\s\S]*?weatherData\.coordinate_source/);
   assert.match(page, /setWeatherData\(data\)/);
@@ -54,17 +59,16 @@ test('Weather requests the selected location, discards stale responses and offer
   assert.match(page, /latitude: coordinates\.latitude, longitude: coordinates\.longitude/);
   assert.match(page, /if \(!profileLoaded \|\| !locationInitialized\) return/);
   assert.match(page, /signal: controller\.signal/);
-  assert.match(page, /t\('weatherInvalidCombination'\)/);
   assert.match(page, /t\('weatherUnavailable'\)/);
-  assert.match(page, /t\('weatherCoverageUnavailable'\)/);
-  assert.match(page, /t\('weatherGeocodingUnavailable'\)/);
-  assert.match(page, /payload\.detail\.code/);
-  assert.match(page, /fetchWeather\(selectedDistrict, selectedState, gpsCoordinates\)/);
-  assert.match(page, /disabled=\{!profileLoaded \|\| !locationInitialized\}/);
+  assert.match(page, /fetchCatalogWeather\(selectedLocationId\)/);
+  assert.match(page, /disabled=\{locationsLoading \|\| supportedStates\.length === 0\}/);
   assert.match(page, /const \[selectedState, setSelectedState\] = useState\(''\)/);
-  assert.match(page, /const \[selectedDistrict, setSelectedDistrict\] = useState\(''\)/);
-  assert.match(page, /const savedState = getState\(profile\.state\)\?\.name \|\| ''/);
-  assert.doesNotMatch(page, /getStateForDistrict\(profile\.district\)/);
+  assert.match(page, /setSelectedLocationId\(null\)/);
+  assert.match(page, /setSelectedDistrict\(''\)/);
+  assert.match(page, /localizeLocation\(location\.name, language\)/);
+  assert.match(page, /const isCatalogLocation = Boolean\(data\.location_id && data\.country\?\.toLowerCase\(\) === 'india' && data\.state\)/);
+  assert.match(page, /setSelectedLocationId\(isCatalogLocation \? data\.location_id! : null\)/);
+  assert.doesNotMatch(page, /indiaAdminLgd|getDistrictsForState/);
 });
 
 test('Weather GPS sends exact coordinates to the backend without browser geocoding or saving a profile location', () => {
@@ -73,12 +77,12 @@ test('Weather GPS sends exact coordinates to the backend without browser geocodi
   const gpsHandler = page.match(/const handleCurrentLocation = \(automatic = false\) => \{([\s\S]*?)\n  \};/)?.[1] || '';
   assert.match(page, /navigator\.geolocation\.getCurrentPosition/);
   assert.match(page, /setGpsCoordinates\(coordinates\)/);
-  assert.match(page, /showCurrentLocation=\{false\}/);
   assert.match(page, /data-weather-current-location/);
   assert.match(gpsHandler, /position\.coords\.latitude/);
   assert.match(gpsHandler, /position\.coords\.longitude/);
   assert.doesNotMatch(gpsHandler, /updateProfile|fetch\(['"]https?:/);
   assert.match(fields, /showCurrentLocation\?: boolean/);
+  assert.doesNotMatch(page, /<FarmLocationFields/);
 });
 
 test('Weather supports any typed location through the WeatherAPI-backed search route', () => {

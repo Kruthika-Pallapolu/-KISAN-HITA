@@ -162,6 +162,15 @@ class WeatherService:
     _forecast_cache_ttl_seconds = 600
     _forecast_cache_limit = 256
     _supported_condition_languages = {"en", "te", "hi", "ta", "mr"}
+    # Location discovery is demand-driven. Search results live for six hours;
+    # a location enters the selectable catalogue only after an exact search
+    # match and successful forecast. Both caches are process-local and bounded.
+    _location_search_cache: OrderedDict[str, tuple[float, list[dict]]] = OrderedDict()
+    _location_search_cache_ttl_seconds = 6 * 60 * 60
+    _location_search_cache_limit = 256
+    _supported_location_catalog: OrderedDict[int, tuple[float, dict]] = OrderedDict()
+    _supported_location_catalog_ttl_seconds = 7 * 24 * 60 * 60
+    _supported_location_catalog_limit = 500
 
     @staticmethod
     def _normalize_name(value: str) -> str:
@@ -270,6 +279,72 @@ class WeatherService:
         return next(iter(unique.values()))
 
     @staticmethod
+    async def _search_locations(query: str) -> list[dict]:
+        cache_key = WeatherService._normalize_name(query)
+        now = time.monotonic()
+        with WeatherService._cache_lock:
+            cached = WeatherService._location_search_cache.get(cache_key)
+            if cached and cached[0] > now:
+                WeatherService._location_search_cache.move_to_end(cache_key)
+                return [dict(item) for item in cached[1]]
+            if cached:
+                del WeatherService._location_search_cache[cache_key]
+        results = await WeatherService._weatherapi_request("search.json", {"q": query})
+        if not isinstance(results, list):
+            raise WeatherProviderUnavailable("WeatherAPI.com returned an invalid location search response.")
+        safe_results = [dict(item) for item in results if isinstance(item, dict)]
+        with WeatherService._cache_lock:
+            WeatherService._location_search_cache[cache_key] = (
+                time.monotonic() + WeatherService._location_search_cache_ttl_seconds,
+                safe_results,
+            )
+            WeatherService._location_search_cache.move_to_end(cache_key)
+            while len(WeatherService._location_search_cache) > WeatherService._location_search_cache_limit:
+                WeatherService._location_search_cache.popitem(last=False)
+        return safe_results
+
+    @staticmethod
+    def _remember_supported_location(item: dict) -> None:
+        try:
+            location_id = int(item.get("location_id", item.get("id")))
+        except (TypeError, ValueError):
+            return
+        name = str(item.get("name") or "").strip()
+        region = str(item.get("region") or "").strip()
+        country = str(item.get("country") or "").strip()
+        if location_id <= 0 or not name or not region or not country:
+            return
+        try:
+            latitude, longitude = WeatherService._valid_coordinates(item.get("lat"), item.get("lon"))
+        except WeatherCoverageUnavailable:
+            return
+        option = {"location_id": location_id, "name": name, "region": region, "country": country, "lat": latitude, "lon": longitude}
+        with WeatherService._cache_lock:
+            WeatherService._supported_location_catalog[location_id] = (
+                time.monotonic() + WeatherService._supported_location_catalog_ttl_seconds,
+                option,
+            )
+            WeatherService._supported_location_catalog.move_to_end(location_id)
+            while len(WeatherService._supported_location_catalog) > WeatherService._supported_location_catalog_limit:
+                WeatherService._supported_location_catalog.popitem(last=False)
+
+    @staticmethod
+    def get_supported_locations(state: Optional[str] = None) -> list[dict]:
+        now = time.monotonic()
+        selected_state = WeatherService._normalize_name(state or "")
+        locations = []
+        with WeatherService._cache_lock:
+            for location_id, (expires_at, item) in list(WeatherService._supported_location_catalog.items()):
+                if expires_at <= now:
+                    del WeatherService._supported_location_catalog[location_id]
+                    continue
+                if item["country"].casefold() != "india":
+                    continue
+                if item["region"] and (not selected_state or WeatherService._same_state(item["region"], state or item["region"])):
+                    locations.append(dict(item))
+        return sorted(locations, key=lambda item: (item["region"].casefold(), item["name"].casefold()))
+
+    @staticmethod
     def _parse_state_location_query(query: str) -> Optional[tuple[str, str]]:
         """Parse `state/place` and `place, state` forms without guessing a city."""
         raw_parts = [part.strip() for part in query.split("/")] if "/" in query else [part.strip() for part in query.split(",")]
@@ -305,7 +380,7 @@ class WeatherService:
             if selected_district is not None:
                 place = selected_district["name"]
             search_query = f"{place}, {selected_state}, India"
-        results = await WeatherService._weatherapi_request("search.json", {"q": search_query})
+        results = await WeatherService._search_locations(search_query)
         result = WeatherService._resolve_search_result(search_query, results)
         if structured and (
             WeatherService._normalize_name(result["country"]) != "india"
@@ -318,11 +393,35 @@ class WeatherService:
                 location_id = None
         except (TypeError, ValueError):
             location_id = None
-        return await WeatherService._fetch_forecast(
+        weather = await WeatherService._fetch_forecast(
             result["lat"], result["lon"], result["name"], result["region"] or result["country"], language,
             "WeatherAPI.com Search API result verified against the requested location",
             expected_country=result["country"], expected_region=result["region"],
             searched_location_name=result["name"], forecast_location_id=location_id,
+        )
+        if location_id is not None:
+            WeatherService._remember_supported_location({**result, "location_id": location_id})
+        return weather
+
+    @staticmethod
+    async def get_catalog_location_weather(location_id: int, language: str = "en") -> WeatherData:
+        now = time.monotonic()
+        with WeatherService._cache_lock:
+            cached = WeatherService._supported_location_catalog.get(location_id)
+            if not cached or cached[0] <= now:
+                if cached:
+                    del WeatherService._supported_location_catalog[location_id]
+                raise WeatherLocationNotFound("This supported location expired. Search for it again.")
+            item = dict(cached[1])
+            WeatherService._supported_location_catalog.move_to_end(location_id)
+        # Search result metadata and coordinates are retained for the catalogue
+        # TTL; subsequent forecasts query WeatherAPI by the same exact ID.
+        lat, lon = WeatherService._valid_coordinates(item.get("lat"), item.get("lon"))
+        return await WeatherService._fetch_forecast(
+            lat, lon, item["name"], item["region"] or item["country"], language,
+            "Previously verified WeatherAPI.com Search API result",
+            expected_country=item["country"], expected_region=item["region"],
+            searched_location_name=item["name"], forecast_location_id=location_id,
         )
 
     @staticmethod
@@ -605,6 +704,9 @@ class WeatherService:
                     raise WeatherCoverageUnavailable("WeatherAPI.com returned a different country than the searched location.")
                 if expected_region and WeatherService._normalize_name(provider_state) != WeatherService._normalize_name(expected_region):
                     raise WeatherCoverageUnavailable("WeatherAPI.com returned a different region than the searched location.")
+                provider_name = str(location.get("name") or "").strip()
+                if searched_location_name and WeatherService._normalize_name(provider_name) != WeatherService._normalize_name(searched_location_name):
+                    raise WeatherCoverageUnavailable("WeatherAPI.com returned a different location than the searched result.")
                 canonical_state = expected_region or provider_state or country
                 provider_district = searched_location_name or str(location.get("name") or "").strip()
             elif country.casefold() != "india":
@@ -696,6 +798,7 @@ class WeatherService:
                 district=provider_district or district_name or "Selected location",
                 state=canonical_state,
                 country=country,
+                location_id=forecast_location_id,
                 temperature=temp,
                 feels_like=feels_like,
                 condition=condition,

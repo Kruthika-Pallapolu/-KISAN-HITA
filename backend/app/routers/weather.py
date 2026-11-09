@@ -1,9 +1,7 @@
-import json
-from pathlib import Path
 from fastapi import APIRouter, Query, HTTPException, status, Depends, Request
-from typing import Optional, List
+from typing import Optional
 from ..auth import current_farmer_session
-from ..models.schemas import WeatherData, WeatherCurrentRequest, WeatherCoordinatesRequest, normalize_language_code
+from ..models.schemas import WeatherData, WeatherCurrentRequest, WeatherCoordinatesRequest, WeatherLocationOption, normalize_language_code
 from ..services.weather_service import (
     WeatherService, WeatherCoverageUnavailable, WeatherGeocodingUnavailable,
     WeatherProviderUnavailable, WeatherConfigurationMissing,
@@ -13,10 +11,40 @@ from ..rate_limit import enforce_rate_limit
 
 router = APIRouter(prefix="/api/weather", tags=["weather"])
 
-_GEO_DIRECTORY_PATH = Path(__file__).resolve().parents[3] / "frontend" / "src" / "data" / "indiaAdminLgd.json"
-with _GEO_DIRECTORY_PATH.open(encoding="utf-8") as _directory_file:
-    _GEO_DIRECTORY = json.load(_directory_file)
-_STATE_NAMES = {state["code"]: state["name"] for state in _GEO_DIRECTORY["states"]}
+
+@router.get("/locations", response_model=list[WeatherLocationOption])
+async def get_supported_weather_locations(
+    state: Optional[str] = Query(None, max_length=100),
+    account_id: str = Depends(current_farmer_session),
+):
+    # Returns only locations already validated by exact WeatherAPI Search and
+    # a successful WeatherAPI Forecast response; it makes no provider calls.
+    return WeatherService.get_supported_locations(state)
+
+
+@router.get("/locations/{location_id}/weather", response_model=WeatherData)
+async def get_weather_for_supported_location(
+    location_id: int,
+    request: Request,
+    language: str = Query("en", min_length=2, max_length=5),
+    account_id: str = Depends(current_farmer_session),
+):
+    try:
+        enforce_rate_limit(None, "weather-session", 20, 60, account_id)
+        enforce_rate_limit(request, "weather-location-ip", 60, 60)
+        return await WeatherService.get_catalog_location_weather(location_id, normalize_language_code(language))
+    except WeatherLocationNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"code": "weather_location_not_found", "message": str(exc)})
+    except WeatherCoverageUnavailable as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": "weather_coverage_unavailable", "message": str(exc)})
+    except WeatherGeocodingUnavailable as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": "weather_geocoding_unavailable", "message": str(exc)})
+    except WeatherConfigurationMissing as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": "weather_configuration_missing", "message": str(exc)})
+    except (WeatherProviderUnavailable, RuntimeError) as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": "weather_provider_unavailable", "message": str(exc)})
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 
 
 @router.get("/search", response_model=WeatherData)
@@ -119,7 +147,6 @@ async def get_current_weather_post(req: WeatherCurrentRequest, request: Request,
 @router.get("/districts")
 async def get_districts(account_id: str = Depends(current_farmer_session)):
     return [
-        {"key": district["id"], "name": district["name"], "state": _STATE_NAMES[district["stateCode"]]}
-        for district in _GEO_DIRECTORY["districts"]
-        if district["stateCode"] in _STATE_NAMES
+        {"key": item["location_id"], "name": item["name"], "state": item["region"], "country": item["country"]}
+        for item in WeatherService.get_supported_locations()
     ]
