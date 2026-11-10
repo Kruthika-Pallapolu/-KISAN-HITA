@@ -42,11 +42,12 @@ test('hero heading uses a bounded responsive scale for every localized script', 
 
 test('scroll-scrub assets and touch-responsive playback remain enabled with a brighter image treatment', () => {
   const component = read('../components/ScrollScrubBackground.tsx');
+  const runtime = read('../services/scrollScrub.ts');
   const css = read('../index.css');
   assert.match(component, /kisan-hita-scroll\.mp4/);
-  assert.match(component, /easeScrollProgress\(current, target, mobile/);
-  assert.match(component, /shouldSeekFrame\(seconds, lastSeek, mobile\)/);
   assert.match(component, /playsInline/);
+  assert.match(runtime, /easeScrollProgress\(this\.current, this\.target, this\.mobile\(\), this\.reducedMotion\(\)\)/);
+  assert.match(runtime, /shouldSeekFrame\(seconds, this\.lastSeek, this\.mobile\(\)\)/);
   assert.match(css, /brightness\(1\.08\) saturate\(1\.08\)/);
   assert.match(css, /max-width: 760px\) and \(orientation: portrait\)/);
 });

@@ -1,13 +1,10 @@
 import React, { useEffect, useRef } from 'react';
-import { clampProgress, easeScrollProgress, getScrollProgress, getVideoTime, shouldSeekFrame } from '../services/scrollScrub';
+import { clampProgress, getScrollProgress, ScrollScrubRuntime } from '../services/scrollScrub';
 
 const VIDEO_URL = '/assets/kisan-hita-scroll.mp4';
 const POSTER_URL = '/assets/kisan-hita-sunset.png';
 
-/**
- * Scroll-scrubbed version of the background video behavior in the original
- * Kisan Hita HTML artifact. The video is muted and never plays autonomously.
- */
+/** Scroll controls the muted background video; it is never played autonomously. */
 export const ScrollScrubBackground: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const veilRef = useRef<HTMLDivElement>(null);
@@ -17,18 +14,11 @@ export const ScrollScrubBackground: React.FC = () => {
     const veil = veilRef.current;
     if (!video || !veil) return;
 
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const mobile = window.matchMedia('(max-width: 760px), (pointer: coarse)').matches;
-    let duration = 0;
-    let target = 0;
-    let current = 0;
-    let lastSeek = -1;
-    let frameHandle = 0;
-    let active = true;
-    let seekFailed = false;
+    const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const mobileQuery = window.matchMedia('(max-width: 760px), (pointer: coarse)');
 
-    const measure = () => {
-      target = getScrollProgress(window.scrollY, document.documentElement.scrollHeight, window.innerHeight);
+    const readProgress = () => {
+      const progress = getScrollProgress(window.scrollY, document.documentElement.scrollHeight, window.innerHeight);
 
       // The original artifact scrubs a charcoal veil over its intro and footer.
       const intro = document.querySelector<HTMLElement>('[data-background-intro]');
@@ -51,84 +41,37 @@ export const ScrollScrubBackground: React.FC = () => {
         footerOpacity = (intro ? 0.34 : 0) + (0.72 - (intro ? 0.34 : 0)) * progress;
       }
       veil.style.opacity = String(Math.max(introOpacity, footerOpacity));
-      if (duration > 0) scheduleFrame();
+      return progress;
     };
 
-    const tick = () => {
-      frameHandle = 0;
-      if (!active || seekFailed || duration <= 0) return;
-      // Keep servicing the scroll target while the decoder completes a seek.
-      // Some mobile decoders can delay or omit `seeked`; the original artifact
-      // used a single RAF loop and did not depend on that event to recover.
-      if (video.seeking) {
-        scheduleFrame();
-        return;
-      }
-      current = easeScrollProgress(current, target, mobile, reducedMotion);
-      if (Math.abs(target - current) < 0.0005) current = target;
-      const seconds = getVideoTime(current, duration);
-      if (shouldSeekFrame(seconds, lastSeek, mobile)) {
-        try {
-          video.currentTime = seconds;
-          lastSeek = seconds;
-        } catch {
-          // Avoid a per-frame retry loop; keep the exact supplied still image visible.
-          seekFailed = true;
-          video.style.visibility = 'hidden';
-        }
-      }
-      if (video.seeking || Math.abs(target - current) >= 0.0005) scheduleFrame();
-    };
+    const runtime = new ScrollScrubRuntime({
+      video,
+      readProgress,
+      mobile: () => mobileQuery.matches,
+      reducedMotion: () => reducedMotionQuery.matches,
+      // The poster remains visible if the asset itself fails to load.
+      onUnavailable: () => { video.style.visibility = 'hidden'; },
+    });
 
-    function scheduleFrame() {
-      if (active && !frameHandle) frameHandle = window.requestAnimationFrame(tick);
-    }
+    const onMediaPreferenceChange = () => runtime.refresh();
+    const onViewportResize = () => runtime.refresh();
+    reducedMotionQuery.addEventListener('change', onMediaPreferenceChange);
+    mobileQuery.addEventListener('change', onMediaPreferenceChange);
+    window.visualViewport?.addEventListener('resize', onViewportResize);
 
-    const onMetadata = () => {
-      duration = Number.isFinite(video.duration) ? video.duration : 0;
-      video.pause();
-      current = target;
-      if (duration > 0) {
-        try {
-          video.currentTime = getVideoTime(current, duration);
-          lastSeek = video.currentTime;
-        } catch {
-          seekFailed = true;
-          video.style.visibility = 'hidden';
-        }
-      }
-    };
-
-    const onVideoError = () => {
-      video.style.visibility = 'hidden';
-    };
-    const onSeeked = () => {
-      if (Math.abs(target - current) >= 0.0005) scheduleFrame();
-    };
-
-    video.pause();
-    video.addEventListener('loadedmetadata', onMetadata);
-    video.addEventListener('error', onVideoError);
-    video.addEventListener('seeked', onSeeked);
-    window.addEventListener('scroll', measure, { passive: true });
-    window.addEventListener('resize', measure, { passive: true });
     const resizeObserver = typeof ResizeObserver !== 'undefined'
-      ? new ResizeObserver(measure)
+      ? new ResizeObserver(() => runtime.refresh())
       : null;
     resizeObserver?.observe(document.documentElement);
-    measure();
-    video.load();
+
+    runtime.mount();
 
     return () => {
-      active = false;
-      if (frameHandle) window.cancelAnimationFrame(frameHandle);
+      runtime.destroy();
       resizeObserver?.disconnect();
-      window.removeEventListener('scroll', measure);
-      window.removeEventListener('resize', measure);
-      video.removeEventListener('loadedmetadata', onMetadata);
-      video.removeEventListener('error', onVideoError);
-      video.removeEventListener('seeked', onSeeked);
-      video.pause();
+      reducedMotionQuery.removeEventListener('change', onMediaPreferenceChange);
+      mobileQuery.removeEventListener('change', onMediaPreferenceChange);
+      window.visualViewport?.removeEventListener('resize', onViewportResize);
     };
   }, []);
 
@@ -141,7 +84,7 @@ export const ScrollScrubBackground: React.FC = () => {
         poster={POSTER_URL}
         muted
         playsInline
-        preload="none"
+        preload="metadata"
         tabIndex={-1}
       />
       <div className="scroll-scrub-background__scrim" />
